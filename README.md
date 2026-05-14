@@ -1,60 +1,61 @@
 # AI File Reader
 
-让网页端 AI（通义千问、ChatGPT、Gemini、Claude）像 IDE 一样自动读取本地文件。
+[中文](./README_CN.md) | English
 
-## 两种模式
+Let web-based AI chatbots (Qwen, ChatGPT, Gemini, Claude) read your local files — just like an IDE agent.
 
-| | 本地服务模式 | 浏览器模式 |
+## Two Modes
+
+| | Native Service | Browser Mode |
 |---|---|---|
-| 体验 | 全自动，打开网页即可用 | 每次重启浏览器需重新授权 |
-| 安装 | 需要 Node.js + 双击运行安装脚本 | 零安装 |
-| 原理 | 扩展通过本地 Node.js 程序读取文件 | 浏览器自带的文件系统 API |
-| 适合 | 长期使用、频繁切换项目 | 临时用一下、不想装东西 |
+| Experience | Fully automatic, works on page load | Requires re-authorization after browser restart |
+| Setup | Needs Node.js + run install script | Zero install |
+| How it works | Extension reads files via a local Node.js process | Uses the browser's built-in File System Access API |
+| Best for | Daily use, switching between projects | Quick one-off use |
 
-两种模式功能完全一样，区别只在于文件访问方式。本地服务不可用时会自动降级到浏览器模式。
+Both modes have identical features. The extension automatically falls back to browser mode when the native service is unavailable.
 
-## 安装
+## Install
 
-### 第一步：加载扩展（两种模式都需要）
+### Step 1: Load the Extension (required for both modes)
 
-1. 打开 Chrome，访问 `chrome://extensions`
-2. 右上角开启「开发者模式」
-3. 点击「加载已解压的扩展程序」，选择本项目文件夹
+1. Open Chrome, go to `chrome://extensions`
+2. Enable "Developer mode" (top right)
+3. Click "Load unpacked" and select this project folder
 
-### 第二步（可选）：安装本地服务
+### Step 2 (optional): Install Native Service
 
-需要 [Node.js](https://nodejs.org) v14+，然后：
+Requires [Node.js](https://nodejs.org) v14+, then:
 
-**双击项目根目录下的 `安装本地服务.bat`**
+**Double-click `安装本地服务.bat` in the project root**
 
-脚本会提示你粘贴扩展 ID（在 chrome://extensions 页面复制），然后自动完成注册。装完重启 Chrome 即可。
+The script will ask you to paste your extension ID (copy it from chrome://extensions), then automatically complete the registration. Restart Chrome when done.
 
-> 如果不装本地服务，直接用浏览器模式也行 — 打开 AI 网站后在侧边栏点「选择文件夹」授权即可。
+> If you skip the native service, browser mode still works — open any supported site, click the 📁 button, and select a folder in the sidebar.
 
-## 使用
+## Usage
 
-打开支持的网站后，页面右下角出现 📁 按钮：
+After opening a supported site, a 📁 button appears at the bottom-right:
 
-| 操作 | 效果 |
-|------|------|
-| 点击 📁 按钮 | 打开文件树侧边栏，浏览并点击文件插入 |
-| 输入 `@文件名` | 模糊搜索，选中后文件内容插入聊天框 |
-| 输入 `@文件夹名` | 批量加载整个目录所有文件（最多 50 个 / 5MB） |
+| Action | Effect |
+|--------|--------|
+| Click 📁 button | Open file tree sidebar, browse and click files to insert |
+| Type `@filename` | Fuzzy search, select to insert file content into chat |
+| Type `@foldername` | Batch-load all files in a directory (up to 50 files / 5MB) |
 
-文件内容以 markdown 代码块格式插入，自动标注语言。
+File content is inserted as markdown code blocks with automatic language detection.
 
-## 安全设计
+## Supported Sites
 
-- 默认隐藏 `.env`、私钥、证书等敏感文件，防止误发密钥给 AI
-- 默认忽略 `.git`、`node_modules`、`dist` 等目录
-- 本地服务只读，不会修改你的文件
-- 路径穿越防护，无法读取工作目录之外的文件
-- 二进制文件自动跳过，单文件上限 1MB
+- chat.qwen.ai (Qwen)
+- chatgpt.com (ChatGPT)
+- gemini.google.com (Gemini)
+- claude.ai (Claude)
 
-## 卸载
+## Uninstall
 
-- 扩展：在 `chrome://extensions` 中移除
-- 本地服务：双击 `卸载本地服务.bat`
+- Extension: Remove from `chrome://extensions`
+- Native service: Double-click `卸载本地服务.bat`
 
 ## License
 
