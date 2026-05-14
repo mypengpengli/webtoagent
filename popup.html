@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup">
+    <h1 class="title">AI File Reader</h1>
+
+    <div class="section">
+      <div class="status-row">
+        <span class="label">连接状态</span>
+        <span class="status-badge" id="status-badge">检测中...</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <label class="label">工作目录</label>
+      <div class="input-row">
+        <input type="text" id="root-dir" placeholder="例如: D:\projects\my-app" />
+        <button id="set-root-btn" class="btn-primary">设置</button>
+      </div>
+      <button id="select-folder-btn" class="btn-secondary" style="display:none;">
+        选择文件夹 (浏览器模式)
+      </button>
+      <p class="hint" id="root-hint"></p>
+    </div>
+
+    <div class="section">
+      <label class="label">支持的网站</label>
+      <div class="site-list">
+        <label class="site-item">
+          <input type="checkbox" data-site="chat.qwen.ai" checked />
+          <span>通义千问 (chat.qwen.ai)</span>
+        </label>
+        <label class="site-item">
+          <input type="checkbox" data-site="chatgpt.com" checked />
+          <span>ChatGPT (chatgpt.com)</span>
+        </label>
+        <label class="site-item">
+          <input type="checkbox" data-site="gemini.google.com" checked />
+          <span>Gemini (gemini.google.com)</span>
+        </label>
+        <label class="site-item">
+          <input type="checkbox" data-site="claude.ai" checked />
+          <span>Claude (claude.ai)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <button id="refresh-btn" class="btn-secondary full-width">刷新文件索引</button>
+    </div>
+
+    <div class="section footer">
+      <span class="version">v1.0.0</span>
+      <a href="#" id="help-link">使用说明</a>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

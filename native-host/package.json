@@ -1,0 +1,9 @@
+{
+  "name": "com.aifilereader.host",
+  "version": "1.0.0",
+  "description": "AI File Reader native messaging host",
+  "main": "host.js",
+  "scripts": {
+    "start": "node host.js"
+  }
+}

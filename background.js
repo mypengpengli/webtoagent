@@ -1,0 +1,145 @@
+const NATIVE_HOST_NAME = 'com.aifilereader.host';
+
+let nativePort = null;
+let nativeConnected = false;
+let pendingRequests = new Map();
+let requestId = 0;
+
+function connectNativeHost() {
+  try {
+    nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+
+    nativePort.onMessage.addListener((msg) => {
+      const pending = pendingRequests.values().next().value;
+      if (pending) {
+        const key = pendingRequests.keys().next().value;
+        pending.resolve(msg);
+        pendingRequests.delete(key);
+      }
+    });
+
+    nativePort.onDisconnect.addListener(() => {
+      nativeConnected = false;
+      nativePort = null;
+      for (const [id, pending] of pendingRequests) {
+        pending.reject(new Error('Native host disconnected'));
+      }
+      pendingRequests.clear();
+    });
+
+    nativeConnected = true;
+    return true;
+  } catch {
+    nativeConnected = false;
+    return false;
+  }
+}
+
+function sendNativeMessage(msg) {
+  return new Promise((resolve, reject) => {
+    if (!nativePort || !nativeConnected) {
+      if (!connectNativeHost()) {
+        reject(new Error('Cannot connect to native host'));
+        return;
+      }
+    }
+
+    const id = ++requestId;
+    pendingRequests.set(id, { resolve, reject });
+
+    try {
+      nativePort.postMessage(msg);
+    } catch (err) {
+      pendingRequests.delete(id);
+      reject(err);
+    }
+
+    setTimeout(() => {
+      if (pendingRequests.has(id)) {
+        pendingRequests.delete(id);
+        reject(new Error('Request timeout'));
+      }
+    }, 10000);
+  });
+}
+
+async function checkNativeHost() {
+  try {
+    const response = await sendNativeMessage({ action: 'ping' });
+    return response.success === true;
+  } catch {
+    return false;
+  }
+}
+
+// Handle messages from content scripts and popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handleMessage(message).then(sendResponse).catch(err => {
+    sendResponse({ success: false, error: err.message });
+  });
+  return true; // async response
+});
+
+async function handleMessage(message) {
+  switch (message.type) {
+    case 'FS_STATUS': {
+      const native = await checkNativeHost();
+      if (native) {
+        const rootResp = await sendNativeMessage({ action: 'get_root' });
+        return { success: true, mode: 'native', rootDir: rootResp.rootDir || '' };
+      }
+      return { success: true, mode: 'filesystem-api' };
+    }
+
+    case 'FS_LIST': {
+      if (nativeConnected) {
+        return await sendNativeMessage({ action: 'list', path: message.path || '' });
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
+    case 'FS_READ': {
+      if (nativeConnected) {
+        return await sendNativeMessage({ action: 'read', path: message.path });
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
+    case 'FS_STAT': {
+      if (nativeConnected) {
+        return await sendNativeMessage({ action: 'stat', path: message.path });
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
+    case 'FS_LIST_ALL': {
+      if (nativeConnected) {
+        return await sendNativeMessage({ action: 'list_all', maxDepth: message.maxDepth || 5 });
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
+    case 'FS_SET_ROOT': {
+      if (nativeConnected) {
+        return await sendNativeMessage({ action: 'set_root', path: message.path });
+      }
+      // For filesystem-api mode, store in chrome.storage
+      await chrome.storage.local.set({ rootDir: message.path });
+      return { success: true, rootDir: message.path };
+    }
+
+    case 'FS_GET_ROOT': {
+      if (nativeConnected) {
+        return await sendNativeMessage({ action: 'get_root' });
+      }
+      const data = await chrome.storage.local.get('rootDir');
+      return { success: true, rootDir: data.rootDir || '' };
+    }
+
+    default:
+      return { success: false, error: `Unknown message type: ${message.type}` };
+  }
+}
+
+// Try to connect on startup
+connectNativeHost();

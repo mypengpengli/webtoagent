@@ -1,0 +1,9 @@
+{
+  "name": "com.aifilereader.host",
+  "description": "AI File Reader native messaging host",
+  "path": "host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://YOUR_EXTENSION_ID_HERE/"
+  ]
+}

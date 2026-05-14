@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "AI File Reader",
+  "version": "1.0.0",
+  "description": "让网页端 AI 像 IDE 一样读取本地文件",
+  "permissions": [
+    "nativeMessaging",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chat.qwen.ai/*",
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.qwen.ai/*",
+        "https://chatgpt.com/*",
+        "https://gemini.google.com/*",
+        "https://claude.ai/*"
+      ],
+      "js": [
+        "lib/language-map.js",
+        "lib/fuzzy-match.js",
+        "lib/file-access.js",
+        "lib/file-tree.js",
+        "lib/autocomplete.js",
+        "adapters/base-adapter.js",
+        "adapters/qwen-adapter.js",
+        "adapters/chatgpt-adapter.js",
+        "adapters/gemini-adapter.js",
+        "adapters/claude-adapter.js",
+        "content.js"
+      ],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
