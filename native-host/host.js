@@ -4,7 +4,15 @@ const path = require('path');
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 const MAX_LIST_ALL_FILES = 5000;
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.svn', '.hg', '__pycache__', '.idea', '.vscode', 'dist', 'build', '.next']);
-const SENSITIVE_FILES = new Set(['.env', '.env.local', '.env.production', '.env.development', 'id_rsa', 'id_ed25519', '.pem', '.key', '.p12', '.pfx', 'credentials.json', 'token.json', '.npmrc', '.pypirc']);
+const SENSITIVE_NAMES = new Set(['credentials.json', 'token.json', '.npmrc', '.pypirc', 'id_rsa', 'id_ed25519', 'id_dsa', '.htpasswd', 'shadow', '.netrc']);
+const SENSITIVE_EXT = ['.pem', '.key', '.p12', '.pfx', '.kdbx', '.keystore', '.jks', '.cer'];
+const SENSITIVE_PATTERN = /^\.env(\.|$)/;
+
+function isSensitiveFile(name) {
+  if (SENSITIVE_NAMES.has(name)) return true;
+  if (SENSITIVE_PATTERN.test(name)) return true;
+  return SENSITIVE_EXT.some(ext => name.endsWith(ext));
+}
 
 let rootDir = '';
 
@@ -50,7 +58,7 @@ function listDirectory(dirPath) {
     for (const entry of entries) {
       if (IGNORED_DIRS.has(entry.name)) continue;
       if (entry.name.startsWith('.')) continue;
-      if (SENSITIVE_FILES.has(entry.name)) continue;
+      if (isSensitiveFile(entry.name)) continue;
 
       result.push({
         name: entry.name,
@@ -127,7 +135,7 @@ function statFile(filePath) {
 let _listAllCount = 0;
 
 function listAllFiles(dirPath, depth, maxDepth) {
-  if (depth > maxDepth) return [];
+  if (depth >= maxDepth) return [];
   if (_listAllCount >= MAX_LIST_ALL_FILES) return [];
   const absPath = dirPath ? getAbsolutePath(dirPath) : rootDir;
   const files = [];
@@ -138,7 +146,7 @@ function listAllFiles(dirPath, depth, maxDepth) {
       if (_listAllCount >= MAX_LIST_ALL_FILES) break;
       if (IGNORED_DIRS.has(entry.name)) continue;
       if (entry.name.startsWith('.')) continue;
-      if (SENSITIVE_FILES.has(entry.name)) continue;
+      if (isSensitiveFile(entry.name)) continue;
 
       const relativePath = dirPath ? path.join(dirPath, entry.name).replace(/\\/g, '/') : entry.name;
 
@@ -155,8 +163,6 @@ function listAllFiles(dirPath, depth, maxDepth) {
 }
 
 function handleMessage(msg) {
-  loadConfig();
-
   switch (msg.action) {
     case 'list':
       return listDirectory(msg.path || '');
@@ -239,15 +245,18 @@ async function main() {
   process.stdin.on('end', () => process.exit(0));
 
   while (true) {
+    let msgId;
     try {
       const msg = await readMessage();
+      msgId = msg._id;
       const response = handleMessage(msg);
-      if (msg._id !== undefined) response._id = msg._id;
+      if (msgId !== undefined) response._id = msgId;
       sendMessage(response);
     } catch (err) {
-      sendMessage({ success: false, error: err.message });
+      sendMessage({ success: false, error: err.message, _id: msgId });
     }
   }
 }
 
+loadConfig();
 main();

@@ -76,6 +76,11 @@ async function checkNativeHost() {
   }
 }
 
+async function ensureConnected() {
+  if (nativeConnected) return true;
+  return await checkNativeHost();
+}
+
 // Handle messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handleMessage(message).then(sendResponse).catch(err => {
@@ -87,7 +92,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message) {
   switch (message.type) {
     case 'FS_STATUS': {
-      const native = await checkNativeHost();
+      const native = await ensureConnected();
       if (native) {
         const rootResp = await sendNativeMessage({ action: 'get_root' });
         return { success: true, mode: 'native', rootDir: rootResp.rootDir || '' };
@@ -96,44 +101,43 @@ async function handleMessage(message) {
     }
 
     case 'FS_LIST': {
-      if (nativeConnected) {
+      if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'list', path: message.path || '' });
       }
       return { success: false, error: 'Native host not connected', fallback: true };
     }
 
     case 'FS_READ': {
-      if (nativeConnected) {
+      if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'read', path: message.path });
       }
       return { success: false, error: 'Native host not connected', fallback: true };
     }
 
     case 'FS_STAT': {
-      if (nativeConnected) {
+      if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'stat', path: message.path });
       }
       return { success: false, error: 'Native host not connected', fallback: true };
     }
 
     case 'FS_LIST_ALL': {
-      if (nativeConnected) {
+      if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'list_all', maxDepth: message.maxDepth || 5 });
       }
       return { success: false, error: 'Native host not connected', fallback: true };
     }
 
     case 'FS_SET_ROOT': {
-      if (nativeConnected) {
+      if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'set_root', path: message.path });
       }
-      // For filesystem-api mode, store in chrome.storage
       await chrome.storage.local.set({ rootDir: message.path });
       return { success: true, rootDir: message.path };
     }
 
     case 'FS_GET_ROOT': {
-      if (nativeConnected) {
+      if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'get_root' });
       }
       const data = await chrome.storage.local.get('rootDir');
