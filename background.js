@@ -10,6 +10,12 @@ function connectNativeHost() {
     nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
     nativePort.onMessage.addListener((msg) => {
+      // Handle unsolicited push messages (file watcher)
+      if (msg.type === 'FS_CHANGED') {
+        broadcastToTabs(msg);
+        return;
+      }
+
       const id = msg._id;
       if (id !== undefined && pendingRequests.has(id)) {
         pendingRequests.get(id).resolve(msg);
@@ -31,6 +37,14 @@ function connectNativeHost() {
     nativeConnected = false;
     return false;
   }
+}
+
+function broadcastToTabs(msg) {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      try { chrome.tabs.sendMessage(tab.id, msg); } catch {}
+    }
+  });
 }
 
 function sendNativeMessage(msg) {
@@ -114,6 +128,13 @@ async function handleMessage(message) {
       return { success: false, error: 'Native host not connected', fallback: true };
     }
 
+    case 'FS_READ_BATCH': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'read_batch', paths: message.paths });
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
     case 'FS_STAT': {
       if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'stat', path: message.path });
@@ -123,7 +144,7 @@ async function handleMessage(message) {
 
     case 'FS_LIST_ALL': {
       if (await ensureConnected()) {
-        return await sendNativeMessage({ action: 'list_all', maxDepth: message.maxDepth || 5 });
+        return await sendNativeMessage({ action: 'list_all', maxDepth: message.maxDepth || 8 });
       }
       return { success: false, error: 'Native host not connected', fallback: true };
     }
@@ -144,9 +165,34 @@ async function handleMessage(message) {
       return { success: true, rootDir: data.rootDir || '' };
     }
 
+    case 'FS_GET_RECENT_ROOTS': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'get_recent_roots' });
+      }
+      return { success: true, roots: [] };
+    }
+
+    case 'FS_WATCH_START': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'watch_start' });
+      }
+      return { success: false, error: 'Native host not connected' };
+    }
+
     default:
       return { success: false, error: `Unknown message type: ${message.type}` };
   }
 }
+
+// Keyboard shortcut handler
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'toggle-sidebar') {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'TOGGLE_SIDEBAR' });
+      }
+    });
+  }
+});
 
 // Lazy connect: first FS_STATUS call will trigger connection and handshake

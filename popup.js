@@ -1,9 +1,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const statusBadge = document.getElementById('status-badge');
-  const rootDirInput = document.getElementById('root-dir');
-  const setRootBtn = document.getElementById('set-root-btn');
-  const rootHint = document.getElementById('root-hint');
-  const refreshBtn = document.getElementById('refresh-btn');
+  const statusHint = document.getElementById('status-hint');
   const helpLink = document.getElementById('help-link');
 
   async function checkStatus() {
@@ -16,63 +13,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (response.mode === 'native') {
           statusBadge.textContent = '本地服务已连接';
           statusBadge.className = 'status-badge native';
-          rootDirInput.value = response.rootDir || '';
-          rootHint.textContent = '通过本地服务读取文件（推荐）';
+          statusHint.textContent = response.rootDir ? `工作目录: ${response.rootDir}` : '请在文件面板中设置工作目录';
         } else {
           statusBadge.textContent = '浏览器模式';
           statusBadge.className = 'status-badge filesystem';
-          rootHint.textContent = '本地服务未连接，请在网页侧边栏中选择文件夹';
+          statusHint.textContent = '在网页文件面板中选择文件夹即可使用';
         }
       }
     } catch {
       statusBadge.textContent = '未连接';
       statusBadge.className = 'status-badge disconnected';
-      rootHint.textContent = '请安装本地服务，或在网页侧边栏中选择文件夹';
+      statusHint.textContent = '请安装本地服务，或在网页文件面板中选择文件夹';
     }
   }
-
-  setRootBtn.addEventListener('click', async () => {
-    const path = rootDirInput.value.trim();
-    if (!path) {
-      rootHint.textContent = '请输入目录路径';
-      return;
-    }
-
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'FS_SET_ROOT', path });
-      if (response.success) {
-        rootHint.textContent = `已设置: ${response.rootDir}`;
-        rootHint.style.color = '#a6e3a1';
-      } else {
-        rootHint.textContent = `错误: ${response.error}`;
-        rootHint.style.color = '#f38ba8';
-      }
-    } catch (err) {
-      rootHint.textContent = `错误: ${err.message}`;
-      rootHint.style.color = '#f38ba8';
-    }
-  });
-
-  refreshBtn.addEventListener('click', async () => {
-    refreshBtn.textContent = '刷新中...';
-    refreshBtn.disabled = true;
-
-    try {
-      const response = await chrome.runtime.sendMessage({ type: 'FS_LIST_ALL', maxDepth: 5 });
-      if (response.success) {
-        refreshBtn.textContent = `已索引 ${response.files.length} 个文件`;
-      } else {
-        refreshBtn.textContent = `刷新失败: ${response.error}`;
-      }
-    } catch (err) {
-      refreshBtn.textContent = `错误: ${err.message}`;
-    }
-
-    setTimeout(() => {
-      refreshBtn.textContent = '刷新文件索引';
-      refreshBtn.disabled = false;
-    }, 2000);
-  });
 
   const siteCheckboxes = document.querySelectorAll('[data-site]');
   const savedSites = await chrome.storage.sync.get('enabledSites');
@@ -92,13 +45,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.preventDefault();
     chrome.tabs.create({ url: chrome.runtime.getURL('help.html') });
   });
-
-  try {
-    const response = await chrome.runtime.sendMessage({ type: 'FS_GET_ROOT' });
-    if (response.success && response.rootDir) {
-      rootDirInput.value = response.rootDir;
-    }
-  } catch {}
 
   checkStatus();
 });

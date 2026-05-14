@@ -30,8 +30,7 @@
 
     toggleBtn = document.createElement('div');
     toggleBtn.id = 'aifr-toggle';
-    toggleBtn.innerHTML = '📁';
-    toggleBtn.title = 'AI File Reader - 打开文件面板';
+    toggleBtn.title = 'AI File Reader (Ctrl+Shift+F)';
     toggleBtn.style.cssText = `
       position: fixed;
       right: 12px;
@@ -51,6 +50,24 @@
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       user-select: none;
     `;
+    toggleBtn.innerHTML = '📁';
+
+    // Status dot
+    const dot = document.createElement('div');
+    dot.id = 'aifr-status-dot';
+    const mode = fileAccess ? fileAccess.getMode() : 'disconnected';
+    const dotColor = mode === 'native' ? '#a6e3a1' : mode === 'filesystem-api' ? '#f9e2af' : '#f38ba8';
+    dot.style.cssText = `
+      position: absolute;
+      bottom: 2px;
+      right: 2px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: ${dotColor};
+      border: 2px solid #1e1e2e;
+    `;
+    toggleBtn.appendChild(dot);
 
     toggleBtn.addEventListener('mouseenter', () => {
       toggleBtn.style.transform = 'scale(1.1)';
@@ -61,13 +78,56 @@
       toggleBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
     });
 
-    toggleBtn.addEventListener('click', () => {
-      if (fileTree) {
-        fileTree.toggle();
-      }
+    // Draggable
+    let isDragging = false;
+    let dragStartX, dragStartY, startRight, startBottom;
+
+    toggleBtn.addEventListener('mousedown', (e) => {
+      isDragging = false;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      startRight = parseInt(toggleBtn.style.right);
+      startBottom = parseInt(toggleBtn.style.bottom);
+
+      const onMove = (e) => {
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isDragging = true;
+        if (isDragging) {
+          toggleBtn.style.right = Math.max(0, startRight - dx) + 'px';
+          toggleBtn.style.bottom = Math.max(0, startBottom - dy) + 'px';
+        }
+      };
+
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (isDragging) {
+          // Save position
+          chrome.storage.local.set({
+            togglePos: { right: toggleBtn.style.right, bottom: toggleBtn.style.bottom }
+          });
+        }
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    toggleBtn.addEventListener('click', (e) => {
+      if (isDragging) { e.stopPropagation(); return; }
+      if (fileTree) fileTree.toggle();
     });
 
     document.body.appendChild(toggleBtn);
+
+    // Restore saved position
+    chrome.storage.local.get('togglePos', (data) => {
+      if (data.togglePos) {
+        toggleBtn.style.right = data.togglePos.right;
+        toggleBtn.style.bottom = data.togglePos.bottom;
+      }
+    });
   }
 
   function setupAutocomplete() {
@@ -122,6 +182,18 @@
     // Create UI components
     fileTree = new FileTree(fileAccess, (content) => {
       currentAdapter.insertText(content, false);
+    }, (content) => {
+      // onUndo: remove the inserted content from the input
+      const el = currentAdapter.getInputElement();
+      if (!el) return;
+      const currentText = el.tagName === 'TEXTAREA' || el.tagName === 'INPUT'
+        ? el.value
+        : (el.textContent || el.innerText || '');
+      const idx = currentText.indexOf(content);
+      if (idx !== -1) {
+        const newText = currentText.substring(0, idx) + currentText.substring(idx + content.length);
+        currentAdapter.insertText(newText, true);
+      }
     });
 
     autocomplete = new Autocomplete(fileAccess, currentAdapter);
@@ -137,8 +209,21 @@
 
     // Pre-load file index for autocomplete
     if (fileAccess.getMode() !== 'disconnected') {
-      fileAccess.listAllFiles(5);
+      fileAccess.listAllFiles(8);
     }
+
+    // Listen for keyboard shortcut and file change events from background
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === 'TOGGLE_SIDEBAR' && fileTree) {
+        fileTree.toggle();
+      }
+      if (msg.type === 'FS_CHANGED' && fileAccess) {
+        fileAccess.listAllFiles(8);
+        if (fileTree && fileTree.visible) {
+          fileTree.showToast('文件已变更，索引已更新');
+        }
+      }
+    });
   }
 
   // Start when DOM is ready

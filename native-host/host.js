@@ -1,34 +1,86 @@
 const fs = require('fs');
 const path = require('path');
 
-const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_LIST_ALL_FILES = 5000;
-const IGNORED_DIRS = new Set(['.git', 'node_modules', '.svn', '.hg', '__pycache__', '.idea', '.vscode', 'dist', 'build', '.next']);
-const SENSITIVE_NAMES = new Set(['credentials.json', 'token.json', '.npmrc', '.pypirc', 'id_rsa', 'id_ed25519', 'id_dsa', '.htpasswd', 'shadow', '.netrc']);
-const SENSITIVE_EXT = ['.pem', '.key', '.p12', '.pfx', '.kdbx', '.keystore', '.jks', '.cer'];
-const SENSITIVE_PATTERN = /^\.env(\.|$)/;
-
-function isSensitiveFile(name) {
-  if (SENSITIVE_NAMES.has(name)) return true;
-  if (SENSITIVE_PATTERN.test(name)) return true;
-  return SENSITIVE_EXT.some(ext => name.endsWith(ext));
-}
+const IGNORED_DIRS = new Set(['.git', 'node_modules', '.svn', '.hg', '__pycache__', '.idea', '.vscode', 'dist', 'build', '.next', '.cache', 'vendor', 'target', '.venv', 'venv']);
 
 let rootDir = '';
+let recentRoots = [];
+let watcher = null;
+let watchDebounce = null;
+let gitignoreRules = [];
 
 function loadConfig() {
   const configPath = path.join(__dirname, 'config.json');
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     rootDir = config.rootDir || '';
+    recentRoots = config.recentRoots || [];
   } catch {
     rootDir = '';
+    recentRoots = [];
   }
 }
 
 function saveConfig() {
   const configPath = path.join(__dirname, 'config.json');
-  fs.writeFileSync(configPath, JSON.stringify({ rootDir }, null, 2));
+  fs.writeFileSync(configPath, JSON.stringify({ rootDir, recentRoots }, null, 2));
+}
+
+function addToRecent(dir) {
+  recentRoots = recentRoots.filter(r => r !== dir);
+  recentRoots.unshift(dir);
+  if (recentRoots.length > 10) recentRoots.length = 10;
+}
+
+// .gitignore support
+function loadGitignore() {
+  gitignoreRules = [];
+  if (!rootDir) return;
+  const gitignorePath = path.join(rootDir, '.gitignore');
+  try {
+    const content = fs.readFileSync(gitignorePath, 'utf8');
+    gitignoreRules = content.split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'))
+      .map(pattern => {
+        const isNegation = pattern.startsWith('!');
+        if (isNegation) pattern = pattern.slice(1);
+        const isDir = pattern.endsWith('/');
+        if (isDir) pattern = pattern.slice(0, -1);
+        const regex = patternToRegex(pattern);
+        return { regex, isNegation, isDir };
+      });
+  } catch {}
+}
+
+function patternToRegex(pattern) {
+  let re = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '{{GLOBSTAR}}')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\{\{GLOBSTAR\}\}/g, '.*');
+  return new RegExp(`(^|/)${re}($|/)`);
+}
+
+function isGitignored(relativePath, isDirectory) {
+  let ignored = false;
+  for (const rule of gitignoreRules) {
+    if (rule.isDir && !isDirectory) continue;
+    if (rule.regex.test(relativePath)) {
+      ignored = !rule.isNegation;
+    }
+  }
+  return ignored;
+}
+
+function shouldIgnore(name, relativePath, isDirectory) {
+  if (IGNORED_DIRS.has(name) && isDirectory) return true;
+  if (name.startsWith('.') && name !== '.gitignore') return true;
+  if (gitignoreRules.length > 0 && isGitignored(relativePath || name, isDirectory)) return true;
+  return false;
 }
 
 function isPathSafe(requestedPath) {
@@ -36,7 +88,7 @@ function isPathSafe(requestedPath) {
   const resolved = path.resolve(rootDir, requestedPath);
   const root = path.resolve(rootDir);
   const relative = path.relative(root, resolved);
-  if (!relative) return true; // same directory
+  if (!relative) return true;
   if (relative.startsWith('..') || path.isAbsolute(relative)) return false;
   return true;
 }
@@ -56,14 +108,13 @@ function listDirectory(dirPath) {
     const result = [];
 
     for (const entry of entries) {
-      if (IGNORED_DIRS.has(entry.name)) continue;
-      if (entry.name.startsWith('.')) continue;
-      if (isSensitiveFile(entry.name)) continue;
+      const relPath = dirPath ? `${dirPath}/${entry.name}` : entry.name;
+      if (shouldIgnore(entry.name, relPath, entry.isDirectory())) continue;
 
       result.push({
         name: entry.name,
         type: entry.isDirectory() ? 'directory' : 'file',
-        path: dirPath ? path.join(dirPath, entry.name).replace(/\\/g, '/') : entry.name
+        path: relPath.replace(/\\/g, '/')
       });
     }
 
@@ -88,21 +139,24 @@ function readFile(filePath) {
   try {
     const stat = fs.statSync(absPath);
     if (stat.size > MAX_FILE_SIZE) {
-      return { success: false, error: `File too large: ${(stat.size / 1024).toFixed(1)}KB (max 1MB)`, size: stat.size };
+      return { success: false, error: `File too large: ${(stat.size / 1024).toFixed(1)}KB (max 5MB)`, size: stat.size };
     }
 
-    // Binary file detection: read first 8KB and check for NUL bytes
-    const sample = Buffer.alloc(Math.min(8192, stat.size));
-    const fd = fs.openSync(absPath, 'r');
-    fs.readSync(fd, sample, 0, sample.length, 0);
-    fs.closeSync(fd);
+    // Binary file detection
+    const sampleSize = Math.min(8192, stat.size);
+    if (sampleSize > 0) {
+      const sample = Buffer.alloc(sampleSize);
+      const fd = fs.openSync(absPath, 'r');
+      fs.readSync(fd, sample, 0, sampleSize, 0);
+      fs.closeSync(fd);
 
-    let nullCount = 0;
-    for (let i = 0; i < sample.length; i++) {
-      if (sample[i] === 0) nullCount++;
-    }
-    if (nullCount > sample.length * 0.01) {
-      return { success: false, error: 'Binary file - cannot display as text' };
+      let nullCount = 0;
+      for (let i = 0; i < sampleSize; i++) {
+        if (sample[i] === 0) nullCount++;
+      }
+      if (nullCount > sampleSize * 0.01) {
+        return { success: false, error: 'Binary file', size: stat.size };
+      }
     }
 
     const content = fs.readFileSync(absPath, 'utf8');
@@ -110,6 +164,22 @@ function readFile(filePath) {
   } catch (err) {
     return { success: false, error: err.message };
   }
+}
+
+function readBatch(paths) {
+  const results = [];
+  let totalSize = 0;
+
+  for (const filePath of paths) {
+    if (totalSize > MAX_FILE_SIZE) break;
+    const result = readFile(filePath);
+    if (result.success) {
+      totalSize += result.size;
+      results.push({ path: filePath, content: result.content, size: result.size });
+    }
+  }
+
+  return { success: true, files: results, totalSize };
 }
 
 function statFile(filePath) {
@@ -144,22 +214,46 @@ function listAllFiles(dirPath, depth, maxDepth) {
     const entries = fs.readdirSync(absPath, { withFileTypes: true });
     for (const entry of entries) {
       if (_listAllCount >= MAX_LIST_ALL_FILES) break;
-      if (IGNORED_DIRS.has(entry.name)) continue;
-      if (entry.name.startsWith('.')) continue;
-      if (isSensitiveFile(entry.name)) continue;
-
-      const relativePath = dirPath ? path.join(dirPath, entry.name).replace(/\\/g, '/') : entry.name;
+      const relPath = dirPath ? `${dirPath}/${entry.name}` : entry.name;
+      if (shouldIgnore(entry.name, relPath, entry.isDirectory())) continue;
 
       if (entry.isDirectory()) {
-        files.push(...listAllFiles(relativePath, depth + 1, maxDepth));
+        files.push(...listAllFiles(relPath, depth + 1, maxDepth));
       } else {
-        files.push(relativePath);
+        files.push(relPath);
         _listAllCount++;
       }
     }
   } catch {}
 
   return files;
+}
+
+// File watcher
+function startWatcher() {
+  stopWatcher();
+  if (!rootDir) return;
+
+  try {
+    watcher = fs.watch(rootDir, { recursive: true }, (eventType, filename) => {
+      if (!filename) return;
+      const name = path.basename(filename);
+      if (IGNORED_DIRS.has(name) || name.startsWith('.')) return;
+
+      // Debounce: batch changes within 500ms
+      clearTimeout(watchDebounce);
+      watchDebounce = setTimeout(() => {
+        sendMessage({ type: 'FS_CHANGED', event: eventType, path: filename.replace(/\\/g, '/') });
+      }, 500);
+    });
+  } catch {}
+}
+
+function stopWatcher() {
+  if (watcher) {
+    watcher.close();
+    watcher = null;
+  }
 }
 
 function handleMessage(msg) {
@@ -171,6 +265,10 @@ function handleMessage(msg) {
       if (!msg.path) return { success: false, error: 'Path required' };
       return readFile(msg.path);
 
+    case 'read_batch':
+      if (!msg.paths || !Array.isArray(msg.paths)) return { success: false, error: 'Paths array required' };
+      return readBatch(msg.paths);
+
     case 'stat':
       if (!msg.path) return { success: false, error: 'Path required' };
       return statFile(msg.path);
@@ -178,7 +276,7 @@ function handleMessage(msg) {
     case 'list_all':
       if (!rootDir) return { success: false, error: 'Root directory not configured' };
       _listAllCount = 0;
-      const files = listAllFiles('', 0, msg.maxDepth || 5);
+      const files = listAllFiles('', 0, msg.maxDepth || 8);
       return { success: true, files, truncated: _listAllCount >= MAX_LIST_ALL_FILES };
 
     case 'set_root':
@@ -188,14 +286,28 @@ function handleMessage(msg) {
         return { success: false, error: 'Directory does not exist' };
       }
       rootDir = newRoot;
+      addToRecent(newRoot);
       saveConfig();
+      loadGitignore();
+      startWatcher();
       return { success: true, rootDir };
 
     case 'get_root':
       return { success: true, rootDir };
 
+    case 'get_recent_roots':
+      return { success: true, roots: recentRoots };
+
+    case 'watch_start':
+      startWatcher();
+      return { success: true };
+
+    case 'watch_stop':
+      stopWatcher();
+      return { success: true };
+
     case 'ping':
-      return { success: true, version: '1.0.0' };
+      return { success: true, version: '1.1.0' };
 
     default:
       return { success: false, error: `Unknown action: ${msg.action}` };
@@ -259,4 +371,6 @@ async function main() {
 }
 
 loadConfig();
+loadGitignore();
+if (rootDir) startWatcher();
 main();

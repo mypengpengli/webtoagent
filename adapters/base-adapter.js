@@ -99,4 +99,29 @@ class BaseAdapter {
       }, timeout);
     });
   }
+
+  insertAsFile(filename, content) {
+    const el = this.getInputElement();
+    if (!el) return false;
+
+    try {
+      const file = new File([content], filename, { type: 'text/plain' });
+      const dt = new DataTransfer();
+      dt.items.add(file);
+
+      const dropEvent = new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: dt
+      });
+
+      el.dispatchEvent(new DragEvent('dragenter', { bubbles: true, dataTransfer: dt }));
+      el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+      el.dispatchEvent(dropEvent);
+
+      return !dropEvent.defaultPrevented;
+    } catch {
+      return false;
+    }
+  }
 }

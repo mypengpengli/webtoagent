@@ -4,46 +4,71 @@
 
 Let web-based AI chatbots (Qwen, ChatGPT, Gemini, Claude) read your local files — just like an IDE agent.
 
+## Features
+
+- **File Tree Sidebar** — Browse your project, click to insert files into chat
+- **@ Commands** — Type `@filename` for fuzzy search, `@foldername` to batch-load an entire directory
+- **Auto File Watching** — Edit files in your IDE, the index updates automatically
+- **.gitignore Support** — Respects your project's ignore rules out of the box
+- **Quick Templates** — Save frequently used prompts, insert with one click
+- **Keyboard Shortcut** — `Ctrl+Shift+F` to toggle the file panel
+- **Draggable Button** — Move the 📁 button anywhere, position is remembered
+- **Status Indicator** — Green/yellow/red dot shows connection state at a glance
+- **Cross-tab Sync** — File index is shared between tabs, no redundant scanning
+- **Insert History** — See what you've added this session, undo with one click
+
 ## Two Modes
 
 | | Native Service | Browser Mode |
 |---|---|---|
 | Experience | Fully automatic, works on page load | Requires re-authorization after browser restart |
-| Setup | Needs Node.js + run install script | Zero install |
-| How it works | Extension reads files via a local Node.js process | Uses the browser's built-in File System Access API |
+| Setup | Node.js + double-click install script | Zero install |
+| How it works | Extension reads files via a local Node.js process | Browser's built-in File System Access API |
 | Best for | Daily use, switching between projects | Quick one-off use |
 
-Both modes have identical features. The extension automatically falls back to browser mode when the native service is unavailable.
+Both modes have identical features. Falls back to browser mode automatically when native service is unavailable.
 
 ## Install
 
-### Step 1: Load the Extension (required for both modes)
+### Step 1: Load the Extension
 
-1. Open Chrome, go to `chrome://extensions`
+1. Open Chrome → `chrome://extensions`
 2. Enable "Developer mode" (top right)
-3. Click "Load unpacked" and select this project folder
+3. Click "Load unpacked" → select this project folder
 
 ### Step 2 (optional): Install Native Service
 
-Requires [Node.js](https://nodejs.org) v14+, then:
+Requires [Node.js](https://nodejs.org) v14+
 
 **Double-click `安装本地服务.bat` in the project root**
 
-The script will ask you to paste your extension ID (copy it from chrome://extensions), then automatically complete the registration. Restart Chrome when done.
+Paste your extension ID when prompted → done. Restart Chrome.
 
-> If you skip the native service, browser mode still works — open any supported site, click the 📁 button, and select a folder in the sidebar.
+> Without native service, browser mode still works — click 📁 on any supported site and select a folder.
 
 ## Usage
 
-After opening a supported site, a 📁 button appears at the bottom-right:
-
 | Action | Effect |
 |--------|--------|
-| Click 📁 button | Open file tree sidebar, browse and click files to insert |
-| Type `@filename` | Fuzzy search, select to insert file content into chat |
-| Type `@foldername` | Batch-load all files in a directory (up to 50 files / 5MB) |
+| Click 📁 (or `Ctrl+Shift+F`) | Open/close file tree sidebar |
+| Click a file in the tree | Insert file content into chat input |
+| Type `@filename` | Fuzzy search → select → insert |
+| Type `@foldername` | Batch-load entire directory (up to 50 files / 5MB) |
+| Drag the 📁 button | Reposition it anywhere on the page |
+| Quick Templates (sidebar bottom) | One-click insert saved prompts |
 
 File content is inserted as markdown code blocks with automatic language detection.
+
+### Status Dot
+
+The small dot on the 📁 button tells you the connection state:
+- 🟢 Green — Native service connected
+- 🟡 Yellow — Browser mode active
+- 🔴 Red — Not configured (click to set up)
+
+### Insert History
+
+The sidebar shows "已添加 (N)" at the top — a list of files you've inserted this session. Click "撤销" next to any file to undo.
 
 ## Supported Sites
 

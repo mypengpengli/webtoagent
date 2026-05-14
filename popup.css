@@ -183,3 +183,12 @@ body {
 .footer a:hover {
   text-decoration: underline;
 }
+
+kbd {
+  background: #45475a;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid #585b70;
+  font-family: monospace;
+}
