@@ -2,7 +2,9 @@ const fs = require('fs');
 const path = require('path');
 
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const MAX_LIST_ALL_FILES = 5000;
 const IGNORED_DIRS = new Set(['.git', 'node_modules', '.svn', '.hg', '__pycache__', '.idea', '.vscode', 'dist', 'build', '.next']);
+const SENSITIVE_FILES = new Set(['.env', '.env.local', '.env.production', '.env.development', 'id_rsa', 'id_ed25519', '.pem', '.key', '.p12', '.pfx', 'credentials.json', 'token.json', '.npmrc', '.pypirc']);
 
 let rootDir = '';
 
@@ -24,7 +26,11 @@ function saveConfig() {
 function isPathSafe(requestedPath) {
   if (!rootDir) return false;
   const resolved = path.resolve(rootDir, requestedPath);
-  return resolved.startsWith(path.resolve(rootDir));
+  const root = path.resolve(rootDir);
+  const relative = path.relative(root, resolved);
+  if (!relative) return true; // same directory
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return false;
+  return true;
 }
 
 function getAbsolutePath(relativePath) {
@@ -43,7 +49,8 @@ function listDirectory(dirPath) {
 
     for (const entry of entries) {
       if (IGNORED_DIRS.has(entry.name)) continue;
-      if (entry.name.startsWith('.') && entry.name !== '.env') continue;
+      if (entry.name.startsWith('.')) continue;
+      if (SENSITIVE_FILES.has(entry.name)) continue;
 
       result.push({
         name: entry.name,
@@ -76,6 +83,20 @@ function readFile(filePath) {
       return { success: false, error: `File too large: ${(stat.size / 1024).toFixed(1)}KB (max 1MB)`, size: stat.size };
     }
 
+    // Binary file detection: read first 8KB and check for NUL bytes
+    const sample = Buffer.alloc(Math.min(8192, stat.size));
+    const fd = fs.openSync(absPath, 'r');
+    fs.readSync(fd, sample, 0, sample.length, 0);
+    fs.closeSync(fd);
+
+    let nullCount = 0;
+    for (let i = 0; i < sample.length; i++) {
+      if (sample[i] === 0) nullCount++;
+    }
+    if (nullCount > sample.length * 0.01) {
+      return { success: false, error: 'Binary file - cannot display as text' };
+    }
+
     const content = fs.readFileSync(absPath, 'utf8');
     return { success: true, content, size: stat.size };
   } catch (err) {
@@ -103,16 +124,21 @@ function statFile(filePath) {
   }
 }
 
+let _listAllCount = 0;
+
 function listAllFiles(dirPath, depth, maxDepth) {
   if (depth > maxDepth) return [];
+  if (_listAllCount >= MAX_LIST_ALL_FILES) return [];
   const absPath = dirPath ? getAbsolutePath(dirPath) : rootDir;
   const files = [];
 
   try {
     const entries = fs.readdirSync(absPath, { withFileTypes: true });
     for (const entry of entries) {
+      if (_listAllCount >= MAX_LIST_ALL_FILES) break;
       if (IGNORED_DIRS.has(entry.name)) continue;
       if (entry.name.startsWith('.')) continue;
+      if (SENSITIVE_FILES.has(entry.name)) continue;
 
       const relativePath = dirPath ? path.join(dirPath, entry.name).replace(/\\/g, '/') : entry.name;
 
@@ -120,6 +146,7 @@ function listAllFiles(dirPath, depth, maxDepth) {
         files.push(...listAllFiles(relativePath, depth + 1, maxDepth));
       } else {
         files.push(relativePath);
+        _listAllCount++;
       }
     }
   } catch {}
@@ -144,8 +171,9 @@ function handleMessage(msg) {
 
     case 'list_all':
       if (!rootDir) return { success: false, error: 'Root directory not configured' };
+      _listAllCount = 0;
       const files = listAllFiles('', 0, msg.maxDepth || 5);
-      return { success: true, files };
+      return { success: true, files, truncated: _listAllCount >= MAX_LIST_ALL_FILES };
 
     case 'set_root':
       if (!msg.path) return { success: false, error: 'Path required' };
@@ -195,28 +223,28 @@ function readMessage() {
     }
 
     process.stdin.on('readable', onReadable);
-    process.stdin.on('end', () => reject(new Error('stdin closed')));
   });
 }
 
 function sendMessage(msg) {
-  const json = JSON.stringify(msg);
-  const buf = Buffer.alloc(4);
-  buf.writeUInt32LE(json.length, 0);
-  process.stdout.write(buf);
-  process.stdout.write(json);
+  const jsonBuf = Buffer.from(JSON.stringify(msg), 'utf8');
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(jsonBuf.length, 0);
+  process.stdout.write(header);
+  process.stdout.write(jsonBuf);
 }
 
 async function main() {
   process.stdin.resume();
+  process.stdin.on('end', () => process.exit(0));
 
   while (true) {
     try {
       const msg = await readMessage();
       const response = handleMessage(msg);
+      if (msg._id !== undefined) response._id = msg._id;
       sendMessage(response);
     } catch (err) {
-      if (err.message === 'stdin closed') break;
       sendMessage({ success: false, error: err.message });
     }
   }

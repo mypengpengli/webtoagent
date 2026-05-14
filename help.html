@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AI File Reader - 使用说明</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 700px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      line-height: 1.6;
+    }
+    h1 { color: #89b4fa; margin-bottom: 8px; }
+    h2 { color: #89b4fa; margin-top: 32px; margin-bottom: 12px; font-size: 18px; }
+    h3 { color: #a6adc8; margin-top: 20px; margin-bottom: 8px; font-size: 15px; }
+    code {
+      background: #313244;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    pre {
+      background: #11111b;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+      border: 1px solid #313244;
+    }
+    .step {
+      background: #313244;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 12px 0;
+      border-left: 3px solid #89b4fa;
+    }
+    .step-num {
+      color: #89b4fa;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    .warning {
+      background: #45475a;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border-left: 3px solid #f9e2af;
+      margin: 12px 0;
+    }
+    a { color: #89b4fa; }
+  </style>
+</head>
+<body>
+  <h1>AI File Reader</h1>
+  <p>让网页端 AI 像 IDE 一样读取本地文件</p>
+
+  <h2>安装本地服务（推荐）</h2>
+  <p>本地服务可以让扩展自动读取你电脑上的文件，无需每次手动授权。</p>
+
+  <div class="step">
+    <span class="step-num">1.</span>确保已安装 <a href="https://nodejs.org">Node.js</a>（v14+）
+  </div>
+  <div class="step">
+    <span class="step-num">2.</span>在 Chrome 中加载扩展：打开 <code>chrome://extensions</code>，开启开发者模式，点击"加载已解压的扩展程序"，选择扩展目录
+  </div>
+  <div class="step">
+    <span class="step-num">3.</span>复制扩展 ID（在扩展卡片上显示的一串字母）
+  </div>
+  <div class="step">
+    <span class="step-num">4.</span>编辑 <code>native-host/manifest.json</code>，将 <code>YOUR_EXTENSION_ID_HERE</code> 替换为你的扩展 ID
+  </div>
+  <div class="step">
+    <span class="step-num">5.</span>双击运行 <code>native-host/install.bat</code>
+  </div>
+  <div class="step">
+    <span class="step-num">6.</span>重启 Chrome，在扩展弹窗中设置工作目录
+  </div>
+
+  <h2>使用方法</h2>
+
+  <h3>文件树面板</h3>
+  <p>在支持的网站上，页面右下角会出现一个 📁 按钮。点击它打开文件树面板，浏览并点击文件即可将内容插入到聊天输入框。</p>
+
+  <h3>@ 指令</h3>
+  <p>在聊天输入框中输入 <code>@</code> 加文件名，会弹出自动补全列表。选择文件后，文件内容会自动插入。</p>
+
+  <h2>浏览器模式（降级方案）</h2>
+  <p>如果不想安装本地服务，可以使用浏览器的文件系统访问 API：</p>
+  <div class="step">
+    <span class="step-num">1.</span>在扩展弹窗中点击"选择文件夹"
+  </div>
+  <div class="step">
+    <span class="step-num">2.</span>授权访问你的项目文件夹
+  </div>
+  <div class="warning">
+    注意：浏览器模式每次重启 Chrome 后需要重新授权文件夹访问权限。
+  </div>
+
+  <h2>支持的网站</h2>
+  <ul>
+    <li>通义千问 (chat.qwen.ai)</li>
+    <li>ChatGPT (chatgpt.com)</li>
+    <li>Gemini (gemini.google.com)</li>
+    <li>Claude (claude.ai)</li>
+  </ul>
+
+  <h2>常见问题</h2>
+  <h3>扩展弹窗显示"未连接"</h3>
+  <p>确认已运行 <code>install.bat</code>，且 <code>native-host/manifest.json</code> 中的扩展 ID 正确。重启 Chrome 后重试。</p>
+
+  <h3>文件内容没有插入到输入框</h3>
+  <p>部分网站会更新 DOM 结构，导致适配器失效。请在 GitHub 上报告问题。</p>
+
+  <h3>大文件警告</h3>
+  <p>超过 100KB 的文件会弹出确认提示。超过 1MB 的文件无法读取（防止浏览器卡顿）。</p>
+</body>
+</html>

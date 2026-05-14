@@ -13,6 +13,7 @@
   let fileTree = null;
   let autocomplete = null;
   let toggleBtn = null;
+  let initialized = false;
 
   function detectSite() {
     const hostname = window.location.hostname;
@@ -25,6 +26,8 @@
   }
 
   function createToggleButton() {
+    if (document.getElementById('aifr-toggle')) return;
+
     toggleBtn = document.createElement('div');
     toggleBtn.id = 'aifr-toggle';
     toggleBtn.innerHTML = '📁';
@@ -75,12 +78,13 @@
   }
 
   function observeInputChanges() {
-    // Watch for SPA navigation and input element changes
+    let debounceTimer = null;
     const observer = new MutationObserver(() => {
-      const inputEl = currentAdapter.getInputElement();
-      if (inputEl && autocomplete) {
-        autocomplete.attachToInput(inputEl);
-      }
+      if (debounceTimer) return;
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        setupAutocomplete();
+      }, 500);
     });
 
     observer.observe(document.body, {
@@ -90,16 +94,26 @@
   }
 
   async function init() {
+    if (initialized) return;
+
     currentAdapter = detectSite();
     if (!currentAdapter) return;
+
+    // Check if site is enabled
+    try {
+      const data = await chrome.storage.sync.get('enabledSites');
+      const enabledSites = data.enabledSites || ['chat.qwen.ai', 'chatgpt.com', 'gemini.google.com', 'claude.ai'];
+      if (!enabledSites.includes(currentAdapter.getHostname())) return;
+    } catch {}
 
     // Wait for the chat input to be ready
     const ready = await currentAdapter.waitForReady();
     if (!ready) {
-      // Retry after a delay (SPA might still be loading)
       setTimeout(init, 2000);
       return;
     }
+
+    initialized = true;
 
     // Initialize file access
     fileAccess = new FileAccess();
@@ -131,7 +145,6 @@
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
-    // Small delay to let SPA frameworks initialize
     setTimeout(init, 1000);
   }
 })();

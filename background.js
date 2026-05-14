@@ -10,11 +10,10 @@ function connectNativeHost() {
     nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
     nativePort.onMessage.addListener((msg) => {
-      const pending = pendingRequests.values().next().value;
-      if (pending) {
-        const key = pendingRequests.keys().next().value;
-        pending.resolve(msg);
-        pendingRequests.delete(key);
+      const id = msg._id;
+      if (id !== undefined && pendingRequests.has(id)) {
+        pendingRequests.get(id).resolve(msg);
+        pendingRequests.delete(id);
       }
     });
 
@@ -27,7 +26,6 @@ function connectNativeHost() {
       pendingRequests.clear();
     });
 
-    nativeConnected = true;
     return true;
   } catch {
     nativeConnected = false;
@@ -37,7 +35,7 @@ function connectNativeHost() {
 
 function sendNativeMessage(msg) {
   return new Promise((resolve, reject) => {
-    if (!nativePort || !nativeConnected) {
+    if (!nativePort) {
       if (!connectNativeHost()) {
         reject(new Error('Cannot connect to native host'));
         return;
@@ -45,6 +43,7 @@ function sendNativeMessage(msg) {
     }
 
     const id = ++requestId;
+    msg._id = id;
     pendingRequests.set(id, { resolve, reject });
 
     try {
@@ -66,8 +65,13 @@ function sendNativeMessage(msg) {
 async function checkNativeHost() {
   try {
     const response = await sendNativeMessage({ action: 'ping' });
-    return response.success === true;
+    if (response.success) {
+      nativeConnected = true;
+      return true;
+    }
+    return false;
   } catch {
+    nativeConnected = false;
     return false;
   }
 }
@@ -141,5 +145,4 @@ async function handleMessage(message) {
   }
 }
 
-// Try to connect on startup
-connectNativeHost();
+// Lazy connect: first FS_STATUS call will trigger connection and handshake

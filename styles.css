@@ -1,0 +1,38 @@
+/* Content script styles - minimal, most UI is in Shadow DOM */
+
+#aifr-toggle {
+  position: fixed;
+  right: 12px;
+  bottom: 80px;
+  width: 44px;
+  height: 44px;
+  background: #1e1e2e;
+  border: 1px solid #45475a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2147483645;
+  font-size: 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+
+#aifr-toggle:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+#aifr-sidebar-host {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 2147483647;
+}
+
+#aifr-autocomplete {
+  position: fixed;
+  z-index: 2147483646;
+}
