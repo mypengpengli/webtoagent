@@ -130,6 +130,14 @@
     });
   }
 
+  function updateStatusDot() {
+    const dot = document.getElementById('aifr-status-dot');
+    if (!dot || !fileAccess) return;
+    const mode = fileAccess.getMode();
+    const color = mode === 'native' ? '#a6e3a1' : mode === 'filesystem-api' ? '#f9e2af' : '#f38ba8';
+    dot.style.background = color;
+  }
+
   function setupAutocomplete() {
     const inputEl = currentAdapter.getInputElement();
     if (inputEl && autocomplete) {
@@ -219,11 +227,14 @@
       }
       if (msg.type === 'FS_CHANGED' && fileAccess) {
         fileAccess.listAllFiles(8);
+        updateStatusDot();
         if (fileTree && fileTree.visible) {
           fileTree.showToast('文件已变更，索引已更新');
         }
       }
     });
+
+    updateStatusDot();
   }
 
   // Start when DOM is ready

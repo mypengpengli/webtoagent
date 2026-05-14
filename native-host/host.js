@@ -98,8 +98,11 @@ function getAbsolutePath(relativePath) {
 }
 
 function listDirectory(dirPath) {
+  if (!rootDir) {
+    return { success: false, error: 'Root directory not configured. Please set a working directory in the extension popup.' };
+  }
   const absPath = dirPath ? getAbsolutePath(dirPath) : rootDir;
-  if (!isPathSafe(dirPath || '.')) {
+  if (dirPath && !isPathSafe(dirPath)) {
     return { success: false, error: 'Path outside root directory' };
   }
 
@@ -130,6 +133,9 @@ function listDirectory(dirPath) {
 }
 
 function readFile(filePath) {
+  if (!rootDir) {
+    return { success: false, error: 'Root directory not configured' };
+  }
   if (!isPathSafe(filePath)) {
     return { success: false, error: 'Path outside root directory' };
   }
@@ -166,6 +172,42 @@ function readFile(filePath) {
   }
 }
 
+function readBinary(filePath) {
+  if (!rootDir) {
+    return { success: false, error: 'Root directory not configured' };
+  }
+  if (!isPathSafe(filePath)) {
+    return { success: false, error: 'Path outside root directory' };
+  }
+
+  const absPath = getAbsolutePath(filePath);
+
+  try {
+    const stat = fs.statSync(absPath);
+    if (stat.size > 10 * 1024 * 1024) {
+      return { success: false, error: 'File too large (max 10MB for binary)', size: stat.size };
+    }
+
+    const content = fs.readFileSync(absPath);
+    return { success: true, data: content.toString('base64'), size: stat.size, mimeType: getMimeType(filePath) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+function getMimeType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeMap = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
+    '.pdf': 'application/pdf', '.zip': 'application/zip',
+    '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+    '.mp4': 'video/mp4', '.webm': 'video/webm'
+  };
+  return mimeMap[ext] || 'application/octet-stream';
+}
+
 function readBatch(paths) {
   const results = [];
   let totalSize = 0;
@@ -183,6 +225,9 @@ function readBatch(paths) {
 }
 
 function statFile(filePath) {
+  if (!rootDir) {
+    return { success: false, error: 'Root directory not configured' };
+  }
   if (!isPathSafe(filePath)) {
     return { success: false, error: 'Path outside root directory' };
   }
@@ -264,6 +309,10 @@ function handleMessage(msg) {
     case 'read':
       if (!msg.path) return { success: false, error: 'Path required' };
       return readFile(msg.path);
+
+    case 'read_binary':
+      if (!msg.path) return { success: false, error: 'Path required' };
+      return readBinary(msg.path);
 
     case 'read_batch':
       if (!msg.paths || !Array.isArray(msg.paths)) return { success: false, error: 'Paths array required' };

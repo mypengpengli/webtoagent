@@ -135,6 +135,13 @@ async function handleMessage(message) {
       return { success: false, error: 'Native host not connected', fallback: true };
     }
 
+    case 'FS_READ_BINARY': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'read_binary', path: message.path });
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
     case 'FS_STAT': {
       if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'stat', path: message.path });

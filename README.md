@@ -82,6 +82,26 @@ The sidebar shows "已添加 (N)" at the top — a list of files you've inserted
 - Extension: Remove from `chrome://extensions`
 - Native service: Double-click `卸载本地服务.bat`
 
+> You only need to uninstall the native service if you want to completely remove the extension from your system, or if you need to re-register with a different extension ID. Normal code updates do NOT require reinstalling — just click the refresh button on `chrome://extensions`.
+
+## FAQ
+
+**Q: I updated the code, do I need to reinstall?**
+
+No. Just click the refresh icon (↻) on your extension card in `chrome://extensions`, then refresh the AI website page.
+
+**Q: When do I need to run the install script again?**
+
+Only if:
+- You changed the extension ID (e.g., deleted and re-loaded the extension)
+- You moved the project folder to a different location
+
+**Q: When do I need to run the uninstall script?**
+
+Only if:
+- You want to completely remove the extension and clean up the system registry
+- You're switching to a different copy/version of the extension with a new ID
+
 ## License
 
 MIT
