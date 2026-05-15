@@ -15,6 +15,14 @@
   let toggleBtn = null;
   let initialized = false;
 
+  // Bridge state
+  let bridgeActive = false;
+  let bridgeRound = 0;
+  let bridgeMaxRounds = 20;
+  let bridgeLastHash = '';
+  let bridgeCheckInterval = null;
+  let bridgeKeepalive = null;
+
   function detectSite() {
     const hostname = window.location.hostname;
     for (const adapter of ADAPTERS) {
@@ -221,21 +229,215 @@
     }
 
     // Listen for keyboard shortcut and file change events from background
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.type === 'TOGGLE_SIDEBAR' && fileTree) {
-        fileTree.toggle();
-      }
-      if (msg.type === 'FS_CHANGED' && fileAccess) {
-        fileAccess.listAllFiles(8);
-        updateStatusDot();
-        if (fileTree && fileTree.visible) {
-          fileTree.showToast('文件已变更，索引已更新');
-        }
-      }
-    });
-
     updateStatusDot();
   }
+
+  // Bridge functions
+  function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return hash.toString() + '_' + str.length;
+  }
+
+  async function startBridge() {
+    if (bridgeActive) return;
+
+    // Validate before starting
+    try {
+      const wantsDebugWindow = Boolean(fileTree && fileTree.isBridgeDebugWindowEnabled && fileTree.isBridgeDebugWindowEnabled());
+      const resp = await chrome.runtime.sendMessage({
+        type: 'BRIDGE_START',
+        debugWindow: wantsDebugWindow
+      });
+      if (!resp.success) {
+        if (fileTree) fileTree.showToast(resp.error || '启动失败', 'error');
+        return false;
+      }
+      if (wantsDebugWindow && fileTree) {
+        if (resp.debugWindow) fileTree.appendBridgeLog('CMD 调试窗口已打开');
+        else fileTree.showToast('CMD 调试窗口打开失败，已继续后台运行', 'error');
+      }
+    } catch (err) {
+      if (fileTree) fileTree.showToast('无法连接本地服务', 'error');
+      return false;
+    }
+
+    bridgeActive = true;
+    bridgeRound = 0;
+
+    // Set baseline: current last reply should NOT trigger
+    const currentReply = currentAdapter.getLastAssistantMessage();
+    bridgeLastHash = currentReply ? simpleHash(currentReply) : '';
+
+    let wasGenerating = false;
+    let stableCount = 0;
+    let lastText = '';
+    let cooldownUntil = 0;
+
+    bridgeCheckInterval = setInterval(() => {
+      if (!bridgeActive) { clearInterval(bridgeCheckInterval); return; }
+      if (Date.now() < cooldownUntil) return;
+
+      const generating = currentAdapter.isGenerating();
+
+      if (generating) {
+        wasGenerating = true;
+        stableCount = 0;
+        return;
+      }
+
+      if (!wasGenerating) return;
+
+      const reply = currentAdapter.getLastAssistantMessage();
+      if (!reply) return;
+
+      if (reply === lastText) {
+        stableCount++;
+      } else {
+        lastText = reply;
+        stableCount = 0;
+        return;
+      }
+
+      if (stableCount < 2) return;
+
+      const hash = simpleHash(reply);
+      if (hash === bridgeLastHash) return;
+
+      bridgeLastHash = hash;
+      bridgeRound++;
+      wasGenerating = false;
+      stableCount = 0;
+      cooldownUntil = Date.now() + 5000;
+
+      if (bridgeRound > bridgeMaxRounds) {
+        if (fileTree) fileTree.showToast(`已达 ${bridgeMaxRounds} 轮，仍在继续...`);
+      }
+
+      sendToClaude(reply);
+    }, 2000);
+
+    if (fileTree) fileTree.showToast('Bridge 已启动，等待新回复...');
+
+    // Keepalive: prevent SW from sleeping during long CC tasks
+    bridgeKeepalive = setInterval(() => {
+      if (bridgeActive) chrome.runtime.sendMessage({ type: 'KEEPALIVE' });
+    }, 20000);
+
+    return true;
+  }
+
+  function stopBridge() {
+    bridgeActive = false;
+    if (bridgeCheckInterval) {
+      clearInterval(bridgeCheckInterval);
+      bridgeCheckInterval = null;
+    }
+    if (bridgeKeepalive) {
+      clearInterval(bridgeKeepalive);
+      bridgeKeepalive = null;
+    }
+    chrome.runtime.sendMessage({ type: 'BRIDGE_STOP' });
+    if (fileTree) {
+      fileTree.updateBridge('stopped', 0);
+      fileTree.showToast('Bridge 已停止');
+    }
+  }
+
+  async function sendToClaude(text) {
+    if (fileTree) fileTree.updateBridge('sending', bridgeRound);
+
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: 'BRIDGE_SEND',
+        text: text
+      });
+
+      if (!response.success) {
+        if (fileTree) fileTree.showToast(`发送失败: ${response.error}`, 'error');
+      }
+    } catch (err) {
+      if (fileTree) fileTree.showToast(`Bridge 连接错误: ${err.message}`, 'error');
+    }
+  }
+
+  function waitForSendEnabled(callback, attempts = 0) {
+    if (attempts > 20) {
+      if (fileTree) fileTree.showToast('发送按钮未就绪，请手动发送', 'error');
+      return;
+    }
+    const btn = currentAdapter._getSendButton();
+    if (btn && !btn.disabled) {
+      callback();
+    } else {
+      setTimeout(() => waitForSendEnabled(callback, attempts + 1), 200);
+    }
+  }
+
+  // Unified message listener
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'TOGGLE_SIDEBAR' && fileTree) {
+      fileTree.toggle();
+    }
+
+    if (msg.type === 'FS_CHANGED' && fileAccess) {
+      fileAccess.listAllFiles(8);
+      updateStatusDot();
+      if (fileTree && fileTree.visible) {
+        fileTree.showToast('文件已变更，索引已更新');
+      }
+    }
+
+    if (msg.type === 'BRIDGE_PROGRESS' && fileTree && bridgeActive) {
+      const event = msg.event;
+      if (!event) return;
+
+      // Show thinking/text content
+      if (event.type === 'assistant' && event.message && event.message.content) {
+        for (const block of event.message.content) {
+          if (block.type === 'text' && block.text) {
+            fileTree.appendBridgeLog('💭 ' + block.text.substring(0, 200));
+          }
+          if (block.type === 'tool_use') {
+            fileTree.appendBridgeLog('🔧 ' + (block._summary || block.name));
+          }
+        }
+      }
+
+      // Show tool results
+      if (event.type === 'user' && event.message && event.message.content) {
+        for (const block of event.message.content) {
+          if (block.type === 'tool_result' && block.content) {
+            const text = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+            fileTree.appendBridgeLog('✓ ' + text.substring(0, 100));
+          }
+        }
+      }
+    }
+
+    if (msg.type === 'BRIDGE_DONE' && bridgeActive) {
+      if (msg.success) {
+        const resultText = msg.text || '';
+        if (fileTree) {
+          fileTree.showBridgeResult(resultText, () => {
+            currentAdapter.insertText(resultText, true);
+            waitForSendEnabled(() => {
+              currentAdapter.clickSend();
+            });
+          });
+        }
+      } else {
+        if (fileTree) fileTree.showToast(`Claude Code 错误: ${msg.error}`, 'error');
+        // Don't stop bridge on error - user controls stop manually
+      }
+    }
+  });
+
+  // Expose bridge controls for file-tree UI
+  window.__aifrBridge = { start: startBridge, stop: stopBridge, isActive: () => bridgeActive };
 
   // Start when DOM is ready
   if (document.readyState === 'loading') {

@@ -2,20 +2,48 @@
 
 [中文](./README_CN.md) | English
 
-Let web-based AI chatbots (Qwen, ChatGPT, Gemini, Claude) read your local files — just like an IDE agent.
+A Chrome extension that lets web-based AI chatbots read your local files and orchestrate local coding agents — turning the best frontier models into project managers for your local tools.
+
+## Why This Extension?
+
+**Use the strongest models to guide cheaper ones.**
+
+Web-based AI (ChatGPT, Claude, Gemini) always runs the latest, most capable models — with internet access, tool use, and massive context windows. But API-based coding agents (like Claude Code with Qwen-27B, DeepSeek, or local models) are much cheaper to run.
+
+With the **Bridge** feature, you can:
+- Let a frontier web model (GPT-4o, Claude Opus, Gemini) act as the **architect**
+- Let your local/cheap API model act as the **executor** (editing files, running tests)
+- The web model gives high-level instructions, the local model does the grunt work
+- Result: better output than the cheap model alone, at a fraction of the cost
+
+**Even without Bridge**, this extension saves you tons of copy-paste:
+- Click a file → instantly inserted into chat as a code block
+- Click an image → uploaded as an attachment automatically
+- Click a folder → all files loaded at once
+- No more dragging, uploading, or manual copy-paste
 
 ## Features
 
-- **File Tree Sidebar** — Browse your project, click to insert files into chat
-- **@ Commands** — Type `@filename` for fuzzy search, `@foldername` to batch-load an entire directory
-- **Auto File Watching** — Edit files in your IDE, the index updates automatically
-- **.gitignore Support** — Respects your project's ignore rules out of the box
-- **Quick Templates** — Save frequently used prompts, insert with one click
-- **Keyboard Shortcut** — `Ctrl+Shift+F` to toggle the file panel
-- **Draggable Button** — Move the 📁 button anywhere, position is remembered
-- **Status Indicator** — Green/yellow/red dot shows connection state at a glance
-- **Cross-tab Sync** — File index is shared between tabs, no redundant scanning
-- **Insert History** — See what you've added this session, undo with one click
+**File Access**
+- File tree sidebar — browse and click to insert
+- @ commands — `@filename` fuzzy search, `@foldername` batch-load
+- Image/binary upload — click to auto-upload via drag simulation
+- Auto file watching — edit in IDE, index updates automatically
+- .gitignore support — respects your project's ignore rules
+
+**Bridge (AI ↔ Claude Code)**
+- Web AI replies → automatically sent to local Claude Code
+- Claude Code executes (edit files, run commands) → result sent back to web AI
+- Real-time progress log in sidebar (see every tool call as it happens)
+- Full auto or manual confirmation mode
+- Runs for as long as needed — no timeout, you control when to stop
+
+**UX**
+- Keyboard shortcut `Ctrl+Shift+F`
+- Draggable 📁 button with status indicator
+- Insert history with undo
+- Quick prompt templates
+- Cross-tab file index sync
 
 ## Two Modes
 
@@ -24,9 +52,9 @@ Let web-based AI chatbots (Qwen, ChatGPT, Gemini, Claude) read your local files 
 | Experience | Fully automatic, works on page load | Requires re-authorization after browser restart |
 | Setup | Node.js + double-click install script | Zero install |
 | How it works | Extension reads files via a local Node.js process | Browser's built-in File System Access API |
-| Best for | Daily use, switching between projects | Quick one-off use |
+| Best for | Daily use, Bridge feature, switching projects | Quick one-off use |
 
-Both modes have identical features. Falls back to browser mode automatically when native service is unavailable.
+Falls back to browser mode automatically when native service is unavailable.
 
 ## Install
 
@@ -48,27 +76,31 @@ Paste your extension ID when prompted → done. Restart Chrome.
 
 ## Usage
 
+### File Operations
+
 | Action | Effect |
 |--------|--------|
 | Click 📁 (or `Ctrl+Shift+F`) | Open/close file tree sidebar |
-| Click a file in the tree | Insert file content into chat input |
+| Click a file | Insert content as markdown code block |
+| Click an image/PDF | Auto-upload as attachment |
 | Type `@filename` | Fuzzy search → select → insert |
-| Type `@foldername` | Batch-load entire directory (up to 50 files / 5MB) |
-| Drag the 📁 button | Reposition it anywhere on the page |
-| Quick Templates (sidebar bottom) | One-click insert saved prompts |
+| Type `@foldername` | Batch-load entire directory |
+| Drag the 📁 button | Reposition anywhere on page |
 
-File content is inserted as markdown code blocks with automatic language detection.
+### Bridge (Web AI ↔ Local Claude Code)
 
-### Status Dot
+1. Open sidebar → click **Bridge: 启动**
+2. Chat with the web AI normally (give it a coding task)
+3. When the AI replies, Bridge automatically sends the reply to your local Claude Code
+4. Claude Code executes the task (you see real-time progress in sidebar)
+5. Result appears in sidebar → click "发送到网页" to send back (or enable auto-send)
+6. Web AI sees the result and gives next instructions → loop continues
+7. Click **停止** whenever you want to end
 
-The small dot on the 📁 button tells you the connection state:
-- 🟢 Green — Native service connected
-- 🟡 Yellow — Browser mode active
-- 🔴 Red — Not configured (click to set up)
-
-### Insert History
-
-The sidebar shows "已添加 (N)" at the top — a list of files you've inserted this session. Click "撤销" next to any file to undo.
+**Tips:**
+- Check "全自动发送" for fully autonomous operation
+- Check "显示 CMD 调试窗口" to see Claude Code's terminal
+- The sidebar log shows every tool call in real-time (💭 thinking, 🔧 tool use, ✓ result)
 
 ## Supported Sites
 
@@ -82,25 +114,25 @@ The sidebar shows "已添加 (N)" at the top — a list of files you've inserted
 - Extension: Remove from `chrome://extensions`
 - Native service: Double-click `卸载本地服务.bat`
 
-> You only need to uninstall the native service if you want to completely remove the extension from your system, or if you need to re-register with a different extension ID. Normal code updates do NOT require reinstalling — just click the refresh button on `chrome://extensions`.
+> Normal code updates do NOT require reinstalling — just click refresh on `chrome://extensions`.
 
 ## FAQ
 
+**Q: Do I need Claude Code installed for the Bridge feature?**
+
+Yes. Install it globally: `npm install -g @anthropic-ai/claude-code`, then run `claude login` once.
+
+**Q: Can I use a cheap model as the local executor?**
+
+Yes — configure Claude Code to use any model (Qwen-27B, DeepSeek, etc.) via its settings. The web AI provides the intelligence, the local model just follows instructions.
+
 **Q: I updated the code, do I need to reinstall?**
 
-No. Just click the refresh icon (↻) on your extension card in `chrome://extensions`, then refresh the AI website page.
+No. Just click the refresh icon (↻) on your extension card in `chrome://extensions`, then refresh the AI website.
 
-**Q: When do I need to run the install script again?**
+**Q: The Bridge seems stuck / not responding?**
 
-Only if:
-- You changed the extension ID (e.g., deleted and re-loaded the extension)
-- You moved the project folder to a different location
-
-**Q: When do I need to run the uninstall script?**
-
-Only if:
-- You want to completely remove the extension and clean up the system registry
-- You're switching to a different copy/version of the extension with a new ID
+Check the sidebar log. If it shows no activity for a long time, Claude Code might be waiting for permission. Open a terminal and check if there's a `claude` process running.
 
 ## License
 

@@ -10,8 +10,8 @@ function connectNativeHost() {
     nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
     nativePort.onMessage.addListener((msg) => {
-      // Handle unsolicited push messages (file watcher)
-      if (msg.type === 'FS_CHANGED') {
+      // Handle unsolicited push messages
+      if (msg.type === 'FS_CHANGED' || msg.type === 'BRIDGE_PROGRESS' || msg.type === 'BRIDGE_DONE') {
         broadcastToTabs(msg);
         return;
       }
@@ -47,7 +47,7 @@ function broadcastToTabs(msg) {
   });
 }
 
-function sendNativeMessage(msg) {
+function sendNativeMessage(msg, timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
     if (!nativePort) {
       if (!connectNativeHost()) {
@@ -72,7 +72,7 @@ function sendNativeMessage(msg) {
         pendingRequests.delete(id);
         reject(new Error('Request timeout'));
       }
-    }, 10000);
+    }, timeoutMs);
   });
 }
 
@@ -185,6 +185,30 @@ async function handleMessage(message) {
       }
       return { success: false, error: 'Native host not connected' };
     }
+
+    case 'BRIDGE_START': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'claude_start', debugWindow: Boolean(message.debugWindow) });
+      }
+      return { success: false, error: 'Native host not connected' };
+    }
+
+    case 'BRIDGE_SEND': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'claude_send', message: message.text });
+      }
+      return { success: false, error: 'Native host not connected' };
+    }
+
+    case 'BRIDGE_STOP': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'claude_stop' });
+      }
+      return { success: false, error: 'Native host not connected' };
+    }
+
+    case 'KEEPALIVE':
+      return { success: true };
 
     default:
       return { success: false, error: `Unknown message type: ${message.type}` };

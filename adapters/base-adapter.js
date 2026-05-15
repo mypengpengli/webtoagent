@@ -124,4 +124,41 @@ class BaseAdapter {
       return false;
     }
   }
+
+  // Bridge methods - override in site-specific adapters for better accuracy
+
+  getLastAssistantMessage() {
+    const messages = document.querySelectorAll('[data-message-author-role="assistant"], .assistant-message, .ai-message');
+    if (messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    return last.textContent || last.innerText || '';
+  }
+
+  isGenerating() {
+    // Generic: check if send button is disabled or stop button exists
+    const stopBtn = document.querySelector('[aria-label="Stop"], button[data-testid="stop-button"], .stop-button');
+    if (stopBtn) return true;
+    const sendBtn = this._getSendButton();
+    if (sendBtn && sendBtn.disabled) return true;
+    return false;
+  }
+
+  clickSend() {
+    const sendBtn = this._getSendButton();
+    if (sendBtn) {
+      sendBtn.click();
+      return true;
+    }
+    // Fallback: simulate Enter key
+    const el = this.getInputElement();
+    if (el) {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      return true;
+    }
+    return false;
+  }
+
+  _getSendButton() {
+    return document.querySelector('[data-testid="send-button"], button[aria-label="Send"], button[aria-label="发送"]');
+  }
 }

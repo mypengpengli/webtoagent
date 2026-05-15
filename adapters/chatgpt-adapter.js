@@ -15,4 +15,19 @@ class ChatGPTAdapter extends BaseAdapter {
            document.querySelector('.flex-1') ||
            document.body;
   }
+
+  getLastAssistantMessage() {
+    const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
+    if (messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    return last.textContent || '';
+  }
+
+  isGenerating() {
+    return !!document.querySelector('button[data-testid="stop-button"], button[aria-label="Stop generating"]');
+  }
+
+  _getSendButton() {
+    return document.querySelector('button[data-testid="send-button"]');
+  }
 }

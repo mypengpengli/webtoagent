@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const { spawn } = require('child_process');
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_LIST_ALL_FILES = 5000;
@@ -301,6 +303,284 @@ function stopWatcher() {
   }
 }
 
+// Claude Code Bridge
+let claudeSessionId = null;
+let claudeRunning = false;
+let claudeProc = null;
+let claudeTimeout = null;
+let isFirstSend = true;
+let claudeDebugLogPath = '';
+let claudeDebugCmdPath = '';
+
+function claudeStart(options = {}) {
+  if (!rootDir) {
+    return { success: false, error: 'Please set a working directory first' };
+  }
+  claudeRunning = true;
+  isFirstSend = true;
+  claudeDebugLogPath = '';
+  claudeDebugCmdPath = '';
+
+  if (options.debugWindow) {
+    startClaudeDebugWindow();
+  }
+
+  return { success: true, rootDir, debugWindow: Boolean(claudeDebugLogPath) };
+}
+
+function claudeStop() {
+  claudeRunning = false;
+  if (claudeTimeout) { clearTimeout(claudeTimeout); claudeTimeout = null; }
+  if (claudeProc) {
+    killProcessTree(claudeProc.pid);
+    claudeProc = null;
+  }
+  writeClaudeDebugLog('');
+  writeClaudeDebugLog('[bridge] stopped');
+  return { success: true };
+}
+
+function startClaudeDebugWindow() {
+  if (process.platform !== 'win32') return;
+
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    claudeDebugLogPath = path.join(os.tmpdir(), `aifr-claude-bridge-${stamp}.log`);
+    claudeDebugCmdPath = path.join(os.tmpdir(), `aifr-claude-bridge-${stamp}.cmd`);
+
+    fs.writeFileSync(claudeDebugLogPath, [
+      'Claude Code Bridge Debug',
+      `Working directory: ${rootDir}`,
+      `Started: ${new Date().toLocaleString()}`,
+      '',
+      'Waiting for Claude Code activity...',
+      ''
+    ].join(os.EOL), 'utf8');
+
+    const escapedLogPath = claudeDebugLogPath.replace(/'/g, "''");
+    const cmdContent = [
+      '@echo off',
+      'chcp 65001 >nul',
+      'title Claude Code Bridge Debug',
+      'echo Claude Code Bridge Debug',
+      `echo Log: ${claudeDebugLogPath}`,
+      'echo.',
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -LiteralPath '${escapedLogPath}' -Wait -Encoding UTF8"`,
+      ''
+    ].join('\r\n');
+    fs.writeFileSync(claudeDebugCmdPath, cmdContent, 'utf8');
+
+    const escapedCmdPath = claudeDebugCmdPath.replace(/'/g, "''");
+    const psCommand = `Start-Process -FilePath 'cmd.exe' -ArgumentList @('/k', '"${escapedCmdPath}"') -WindowStyle Normal`;
+    const opener = spawn('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-Command',
+      psCommand
+    ], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false
+    });
+    opener.unref();
+  } catch {
+    claudeDebugLogPath = '';
+    claudeDebugCmdPath = '';
+  }
+}
+
+function writeClaudeDebugLog(text) {
+  if (!claudeDebugLogPath) return;
+  try {
+    fs.appendFileSync(claudeDebugLogPath, String(text) + os.EOL, 'utf8');
+  } catch {}
+}
+
+function truncateDebugText(text, max = 2000) {
+  if (!text) return '';
+  const normalized = String(text).replace(/\r\n/g, '\n').trim();
+  return normalized.length > max ? normalized.slice(0, max) + '...' : normalized;
+}
+
+function writeClaudeDebugEvent(event) {
+  if (!claudeDebugLogPath || !event) return;
+
+  if (event.type === 'assistant' && event.message && Array.isArray(event.message.content)) {
+    for (const block of event.message.content) {
+      if (block.type === 'text' && block.text) {
+        writeClaudeDebugLog(`[assistant] ${truncateDebugText(block.text)}`);
+      } else if (block.type === 'tool_use') {
+        writeClaudeDebugLog(`[tool] ${block._summary || getToolSummary(block.name, block.input)}`);
+      }
+    }
+    return;
+  }
+
+  if (event.type === 'user' && event.message && Array.isArray(event.message.content)) {
+    for (const block of event.message.content) {
+      if (block.type === 'tool_result' && block.content) {
+        const content = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+        writeClaudeDebugLog(`[tool result] ${truncateDebugText(content)}`);
+      }
+    }
+    return;
+  }
+
+  if (event.type === 'result') {
+    writeClaudeDebugLog(`[result] ${truncateDebugText(event.result || '')}`);
+    return;
+  }
+
+  writeClaudeDebugLog(`[event] ${event.type || 'unknown'}`);
+}
+
+function killProcessTree(pid) {
+  try {
+    if (process.platform === 'win32') {
+      spawn('taskkill', ['/T', '/F', '/PID', pid.toString()], { shell: true });
+    } else {
+      process.kill(-pid, 'SIGTERM');
+    }
+  } catch {}
+}
+
+function claudeSend(message) {
+  if (!claudeRunning) {
+    return { success: false, error: 'Bridge not started' };
+  }
+  if (!rootDir) {
+    return { success: false, error: 'Working directory not set' };
+  }
+  if (claudeProc) {
+    return { success: false, error: 'Previous task still running' };
+  }
+
+  let prompt = message;
+  if (isFirstSend) {
+    isFirstSend = false;
+    prompt = `[System] You are an automated code executor. Follow instructions precisely. When the task is fully complete, end your response with <<<DONE>>>. Do not add pleasantries.\n\n${message}`;
+  }
+
+  writeClaudeDebugLog('');
+  writeClaudeDebugLog('===== Claude Code task started =====');
+  writeClaudeDebugLog(`[time] ${new Date().toLocaleString()}`);
+  writeClaudeDebugLog(`[cwd] ${rootDir}`);
+  writeClaudeDebugLog(`[prompt] ${truncateDebugText(prompt)}`);
+  writeClaudeDebugLog('');
+
+  const args = ['-p', prompt, '--output-format', 'stream-json', '--max-turns', '10', '--verbose'];
+  if (claudeSessionId) {
+    args.push('--resume', claudeSessionId);
+  }
+
+  let resultText = '';
+  let stderr = '';
+  let lineBuffer = '';
+
+  const claudeCmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
+
+  const proc = spawn(claudeCmd, args, {
+    cwd: rootDir,
+    shell: true,
+    detached: process.platform !== 'win32',
+    env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: 'native-host' }
+  });
+  claudeProc = proc;
+
+  function resetTimeout() {
+    if (claudeTimeout) clearTimeout(claudeTimeout);
+    claudeTimeout = setTimeout(() => {
+      if (claudeProc) {
+        killProcessTree(claudeProc.pid);
+        claudeProc = null;
+        writeClaudeDebugLog('[error] Claude Code timeout (10 minutes without activity)');
+        sendMessage({ type: 'BRIDGE_DONE', success: false, error: 'Claude Code 超时 (10分钟无活动)' });
+      }
+    }, 10 * 60 * 1000);
+  }
+  resetTimeout();
+
+  proc.stdout.on('data', (chunk) => {
+    resetTimeout();
+    lineBuffer += chunk.toString();
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop();
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        if (event.type === 'assistant' && event.message && event.message.content) {
+          for (const block of event.message.content) {
+            if (block.type === 'tool_use') {
+              block._summary = getToolSummary(block.name, block.input);
+            }
+          }
+        }
+        writeClaudeDebugEvent(event);
+        sendMessage({ type: 'BRIDGE_PROGRESS', event });
+        if (event.session_id) claudeSessionId = event.session_id;
+        if (event.type === 'result') resultText = event.result || '';
+      } catch {
+        writeClaudeDebugLog(`[raw] ${truncateDebugText(line)}`);
+      }
+    }
+  });
+
+  proc.stderr.on('data', (chunk) => {
+    resetTimeout();
+    const text = chunk.toString();
+    stderr += text;
+    writeClaudeDebugLog(`[stderr] ${truncateDebugText(text)}`);
+  });
+
+  proc.on('close', (code) => {
+    claudeProc = null;
+    if (claudeTimeout) { clearTimeout(claudeTimeout); claudeTimeout = null; }
+    if (code !== 0 && !resultText) {
+      writeClaudeDebugLog(`[done] failed: ${translateError(stderr, code)}`);
+      sendMessage({ type: 'BRIDGE_DONE', success: false, error: translateError(stderr, code) });
+    } else {
+      writeClaudeDebugLog(`[done] success`);
+      sendMessage({ type: 'BRIDGE_DONE', success: true, text: resultText || '(no output)', sessionId: claudeSessionId });
+    }
+  });
+
+  proc.on('error', (err) => {
+    claudeProc = null;
+    if (claudeTimeout) { clearTimeout(claudeTimeout); claudeTimeout = null; }
+    writeClaudeDebugLog(`[error] ${translateError(err.message, null)}`);
+    sendMessage({ type: 'BRIDGE_DONE', success: false, error: translateError(err.message, null) });
+  });
+
+  return { success: true, status: 'running' };
+}
+
+function getToolSummary(name, input) {
+  if (!input) return name;
+  switch (name) {
+    case 'Read': return `Read(${input.file_path || input.path || ''})`;
+    case 'Edit': return `Edit(${input.file_path || input.path || ''})`;
+    case 'Write': return `Write(${input.file_path || input.path || ''})`;
+    case 'Bash': return `Bash(${(input.command || '').substring(0, 50)})`;
+    case 'Grep': return `Grep(${input.pattern || ''})`;
+    case 'Glob': return `Glob(${input.pattern || ''})`;
+    default: return name;
+  }
+}
+
+function translateError(errText, code) {
+  if (!errText) return `Exit code ${code}`;
+  if (errText.includes('ENOENT') || errText.includes('not recognized'))
+    return '未检测到 Claude Code，请先安装 (npm install -g @anthropic-ai/claude-code)';
+  if (errText.includes('Authentication') || errText.includes('auth'))
+    return 'Claude Code 未登录，请在终端运行 claude login';
+  if (errText.includes('rate') || errText.includes('429'))
+    return '请求过快，请稍后重试';
+  return errText.substring(0, 200);
+}
+
 function handleMessage(msg) {
   switch (msg.action) {
     case 'list':
@@ -354,6 +634,16 @@ function handleMessage(msg) {
     case 'watch_stop':
       stopWatcher();
       return { success: true };
+
+    case 'claude_start':
+      return claudeStart({ debugWindow: Boolean(msg.debugWindow) });
+
+    case 'claude_stop':
+      return claudeStop();
+
+    case 'claude_send':
+      if (!msg.message) return { success: false, error: 'Message required' };
+      return claudeSend(msg.message);
 
     case 'ping':
       return { success: true, version: '1.1.0' };
