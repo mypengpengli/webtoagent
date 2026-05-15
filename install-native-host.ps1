@@ -60,6 +60,14 @@ try {
 
   $chromeKey = 'HKCU\SOFTWARE\Google\Chrome\NativeMessagingHosts\com.webtoagent.host'
   $edgeKey = 'HKCU\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\com.webtoagent.host'
+  $legacyKeys = @(
+    'HKCU:\SOFTWARE\Google\Chrome\NativeMessagingHosts\com.aifilereader.host',
+    'HKCU:\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\com.aifilereader.host'
+  )
+
+  foreach ($legacyKey in $legacyKeys) {
+    Remove-Item -LiteralPath $legacyKey -Recurse -Force -ErrorAction SilentlyContinue
+  }
 
   & reg.exe add $chromeKey /ve /t REG_SZ /d $manifestPath /f | Out-Null
   & reg.exe add $edgeKey /ve /t REG_SZ /d $manifestPath /f | Out-Null

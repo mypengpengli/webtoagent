@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_LIST_ALL_FILES = 5000;
@@ -321,11 +321,12 @@ function claudeStart(options = {}) {
   claudeDebugLogPath = '';
   claudeDebugCmdPath = '';
 
+  let debugWindowOpened = false;
   if (options.debugWindow) {
-    startClaudeDebugWindow();
+    debugWindowOpened = startClaudeDebugWindow();
   }
 
-  return { success: true, rootDir, debugWindow: Boolean(claudeDebugLogPath) };
+  return { success: true, rootDir, debugWindow: debugWindowOpened };
 }
 
 function claudeStop() {
@@ -341,7 +342,7 @@ function claudeStop() {
 }
 
 function startClaudeDebugWindow() {
-  if (process.platform !== 'win32') return;
+  if (process.platform !== 'win32') return false;
 
   try {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -370,23 +371,23 @@ function startClaudeDebugWindow() {
     ].join('\r\n');
     fs.writeFileSync(claudeDebugCmdPath, cmdContent, 'utf8');
 
-    const escapedCmdPath = claudeDebugCmdPath.replace(/'/g, "''");
-    const psCommand = `Start-Process -FilePath 'cmd.exe' -ArgumentList @('/k', '"${escapedCmdPath}"') -WindowStyle Normal`;
-    const opener = spawn('powershell.exe', [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      psCommand
-    ], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: false
+    const comspec = process.env.ComSpec || 'cmd.exe';
+    const openResult = spawnSync(comspec, ['/d', '/c', 'start', '', claudeDebugCmdPath], {
+      cwd: path.dirname(claudeDebugCmdPath),
+      encoding: 'utf8',
+      windowsHide: true
     });
-    opener.unref();
+
+    if (openResult.error) throw openResult.error;
+    if (openResult.status !== 0) {
+      throw new Error((openResult.stderr || openResult.stdout || `cmd start exited with ${openResult.status}`).trim());
+    }
+
+    return true;
   } catch {
     claudeDebugLogPath = '';
     claudeDebugCmdPath = '';
+    return false;
   }
 }
 

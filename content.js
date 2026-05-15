@@ -243,7 +243,7 @@
   }
 
   async function startBridge() {
-    if (bridgeActive) return;
+    if (bridgeActive) return true;
 
     // Validate before starting
     try {
@@ -261,7 +261,8 @@
         else fileTree.showToast('CMD 调试窗口打开失败，已继续后台运行', 'error');
       }
     } catch (err) {
-      if (fileTree) fileTree.showToast('无法连接本地服务', 'error');
+      console.error('[WebToAgent] Bridge start failed:', err);
+      if (fileTree) fileTree.showToast(`无法连接本地服务: ${err.message || err}`, 'error', 5000);
       return false;
     }
 
@@ -269,7 +270,12 @@
     bridgeRound = 0;
 
     // Set baseline: current last reply should NOT trigger
-    const currentReply = currentAdapter.getLastAssistantMessage();
+    let currentReply = '';
+    try {
+      currentReply = currentAdapter.getLastAssistantMessage();
+    } catch (err) {
+      console.warn('[WebToAgent] Failed to read current assistant message:', err);
+    }
     bridgeLastHash = currentReply ? simpleHash(currentReply) : '';
 
     let wasGenerating = false;
@@ -324,7 +330,7 @@
 
     // Keepalive: prevent SW from sleeping during long CC tasks
     bridgeKeepalive = setInterval(() => {
-      if (bridgeActive) chrome.runtime.sendMessage({ type: 'KEEPALIVE' });
+      if (bridgeActive) chrome.runtime.sendMessage({ type: 'KEEPALIVE' }).catch(() => {});
     }, 20000);
 
     return true;
