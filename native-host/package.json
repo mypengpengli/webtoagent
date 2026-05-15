@@ -1,7 +1,7 @@
 {
-  "name": "com.aifilereader.host",
+  "name": "com.webtoagent.host",
   "version": "1.0.0",
-  "description": "AI File Reader native messaging host",
+  "description": "WebToAgent native messaging host",
   "main": "host.js",
   "scripts": {
     "start": "node host.js"

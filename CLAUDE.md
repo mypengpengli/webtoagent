@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI File Reader 是一个 Chrome 扩展 (Manifest V3)，让网页端 AI 聊天界面能像 IDE 一样读取本地文件。支持通义千问、ChatGPT、Gemini、Claude 四个网站。
+WebToAgent 是一个 Chrome 扩展 (Manifest V3)，让网页端 AI 聊天界面能读取本地文件并指挥本地编程智能体工作。支持通义千问、ChatGPT、Gemini、Claude 四个网站。
 
 ## Development
 
@@ -55,6 +55,16 @@ native-host/host.js (Node.js, 读取本地文件系统)
 content script → background.js 的消息类型：`FS_STATUS`, `FS_LIST`, `FS_READ`, `FS_STAT`, `FS_LIST_ALL`, `FS_SET_ROOT`, `FS_GET_ROOT`
 
 background.js → native host 的 action：`ping`, `list`, `read`, `stat`, `list_all`, `set_root`, `get_root`
+
+### Bridge（网页 AI ↔ 本地 Claude Code）
+
+content.js 中的 Bridge 状态机实现网页 AI 与本地 Claude Code 的双向通信循环：
+1. 监听网页 AI 的回复（轮询 DOM hash 变化）
+2. 通过 native host 将回复发送给本地 Claude Code 进程
+3. 接收 Claude Code 的执行结果（`BRIDGE_PROGRESS`, `BRIDGE_DONE` 推送消息）
+4. 将结果插入回网页 AI 的输入框
+
+Bridge 相关消息类型：`BRIDGE_START`, `BRIDGE_STOP`, `BRIDGE_SEND`
 
 ### Native Host 安全约束
 

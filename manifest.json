@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AI File Reader",
+  "name": "WebToAgent",
   "version": "1.0.0",
-  "description": "让网页端 AI 像 IDE 一样读取本地文件",
+  "description": "让网页端 AI 读取本地文件并指挥本地智能体工作",
   "permissions": [
     "nativeMessaging",
     "storage",

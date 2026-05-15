@@ -38,7 +38,7 @@
 
     toggleBtn = document.createElement('div');
     toggleBtn.id = 'aifr-toggle';
-    toggleBtn.title = 'AI File Reader (Ctrl+Shift+F)';
+    toggleBtn.title = 'WebToAgent (Ctrl+Shift+F)';
     toggleBtn.style.cssText = `
       position: fixed;
       right: 12px;
@@ -357,10 +357,16 @@
       });
 
       if (!response.success) {
-        if (fileTree) fileTree.showToast(`发送失败: ${response.error}`, 'error');
+        if (fileTree) {
+          fileTree.showToast(`发送失败: ${response.error}`, 'error');
+          fileTree.updateBridge('waiting', bridgeRound);
+        }
       }
     } catch (err) {
-      if (fileTree) fileTree.showToast(`Bridge 连接错误: ${err.message}`, 'error');
+      if (fileTree) {
+        fileTree.showToast(`Bridge 连接错误: ${err.message}`, 'error');
+        fileTree.updateBridge('waiting', bridgeRound);
+      }
     }
   }
 

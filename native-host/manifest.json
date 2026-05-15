@@ -1,6 +1,6 @@
 {
-  "name": "com.aifilereader.host",
-  "description": "AI File Reader native messaging host",
+  "name": "com.webtoagent.host",
+  "description": "WebToAgent native messaging host",
   "path": "host.bat",
   "type": "stdio",
   "allowed_origins": [

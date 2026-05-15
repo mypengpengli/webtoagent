@@ -16,7 +16,7 @@ try {
 
   Write-Host ''
   Write-Host '========================================'
-  Write-Host '  AI File Reader - Native Host Install'
+  Write-Host '  WebToAgent - Native Host Install'
   Write-Host '========================================'
   Write-Host ''
   Write-Host 'Before continuing:'
@@ -45,8 +45,8 @@ try {
   Write-Host '[1/3] Writing native host manifest...'
 
   $manifest = [ordered]@{
-    name = 'com.aifilereader.host'
-    description = 'AI File Reader native messaging host'
+    name = 'com.webtoagent.host'
+    description = 'WebToAgent native messaging host'
     path = $hostBatPath
     type = 'stdio'
     allowed_origins = @("chrome-extension://$extensionId/")
@@ -58,8 +58,8 @@ try {
 
   Write-Host '[2/3] Registering in Windows registry...'
 
-  $chromeKey = 'HKCU\SOFTWARE\Google\Chrome\NativeMessagingHosts\com.aifilereader.host'
-  $edgeKey = 'HKCU\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\com.aifilereader.host'
+  $chromeKey = 'HKCU\SOFTWARE\Google\Chrome\NativeMessagingHosts\com.webtoagent.host'
+  $edgeKey = 'HKCU\SOFTWARE\Microsoft\Edge\NativeMessagingHosts\com.webtoagent.host'
 
   & reg.exe add $chromeKey /ve /t REG_SZ /d $manifestPath /f | Out-Null
   & reg.exe add $edgeKey /ve /t REG_SZ /d $manifestPath /f | Out-Null

@@ -1,4 +1,4 @@
-const NATIVE_HOST_NAME = 'com.aifilereader.host';
+const NATIVE_HOST_NAME = 'com.webtoagent.host';
 
 let nativePort = null;
 let nativeConnected = false;

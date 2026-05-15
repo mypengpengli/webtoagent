@@ -477,6 +477,7 @@ function claudeSend(message) {
   let resultText = '';
   let stderr = '';
   let lineBuffer = '';
+  let doneSent = false;
 
   const claudeCmd = process.platform === 'win32' ? 'claude.cmd' : 'claude';
 
@@ -495,7 +496,10 @@ function claudeSend(message) {
         killProcessTree(claudeProc.pid);
         claudeProc = null;
         writeClaudeDebugLog('[error] Claude Code timeout (10 minutes without activity)');
-        sendMessage({ type: 'BRIDGE_DONE', success: false, error: 'Claude Code 超时 (10分钟无活动)' });
+        if (!doneSent) {
+          doneSent = true;
+          sendMessage({ type: 'BRIDGE_DONE', success: false, error: 'Claude Code 超时 (10分钟无活动)' });
+        }
       }
     }, 10 * 60 * 1000);
   }
@@ -538,6 +542,8 @@ function claudeSend(message) {
   proc.on('close', (code) => {
     claudeProc = null;
     if (claudeTimeout) { clearTimeout(claudeTimeout); claudeTimeout = null; }
+    if (doneSent) return;
+    doneSent = true;
     if (code !== 0 && !resultText) {
       writeClaudeDebugLog(`[done] failed: ${translateError(stderr, code)}`);
       sendMessage({ type: 'BRIDGE_DONE', success: false, error: translateError(stderr, code) });
