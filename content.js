@@ -22,6 +22,8 @@
   let bridgeLastHash = '';
   let bridgeCheckInterval = null;
   let bridgeKeepalive = null;
+  let bridgeBusy = false; // True while Claude Code is running this round
+  let bridgeLastDoneKey = '';
 
   function detectSite() {
     const hostname = window.location.hostname;
@@ -217,6 +219,9 @@
     // Create toggle button
     createToggleButton();
 
+    // If the native bridge is already running, reflect that in this page.
+    syncBridgeStatus();
+
     // Setup autocomplete on current input
     setupAutocomplete();
 
@@ -242,32 +247,21 @@
     return hash.toString() + '_' + str.length;
   }
 
-  async function startBridge() {
-    if (bridgeActive) return true;
-
-    // Validate before starting
-    try {
-      const wantsDebugWindow = Boolean(fileTree && fileTree.isBridgeDebugWindowEnabled && fileTree.isBridgeDebugWindowEnabled());
-      const resp = await chrome.runtime.sendMessage({
-        type: 'BRIDGE_START',
-        debugWindow: wantsDebugWindow
-      });
-      if (!resp.success) {
-        if (fileTree) fileTree.showToast(resp.error || '启动失败', 'error');
-        return false;
-      }
-      if (wantsDebugWindow && fileTree) {
-        if (resp.debugWindow) fileTree.appendBridgeLog('CMD 调试窗口已打开');
-        else fileTree.showToast('CMD 调试窗口打开失败，已继续后台运行', 'error');
-      }
-    } catch (err) {
-      console.error('[WebToAgent] Bridge start failed:', err);
-      if (fileTree) fileTree.showToast(`无法连接本地服务: ${err.message || err}`, 'error', 5000);
-      return false;
-    }
+  function activateBridgeMonitoring(options = {}) {
+    const { showToast = false, busy = false } = options;
 
     bridgeActive = true;
+    bridgeBusy = Boolean(busy);
     bridgeRound = 0;
+
+    if (bridgeCheckInterval) {
+      clearInterval(bridgeCheckInterval);
+      bridgeCheckInterval = null;
+    }
+    if (bridgeKeepalive) {
+      clearInterval(bridgeKeepalive);
+      bridgeKeepalive = null;
+    }
 
     // Set baseline: current last reply should NOT trigger
     let currentReply = '';
@@ -286,8 +280,15 @@
     bridgeCheckInterval = setInterval(() => {
       if (!bridgeActive) { clearInterval(bridgeCheckInterval); return; }
       if (Date.now() < cooldownUntil) return;
+      if (bridgeBusy) return; // Don't poll while Claude Code is running
 
-      const generating = currentAdapter.isGenerating();
+      let generating = false;
+      try {
+        generating = currentAdapter.isGenerating();
+      } catch (err) {
+        console.warn('[WebToAgent] Failed to read generation state:', err);
+        return;
+      }
 
       if (generating) {
         wasGenerating = true;
@@ -297,7 +298,13 @@
 
       if (!wasGenerating) return;
 
-      const reply = currentAdapter.getLastAssistantMessage();
+      let reply = '';
+      try {
+        reply = currentAdapter.getLastAssistantMessage();
+      } catch (err) {
+        console.warn('[WebToAgent] Failed to read assistant reply:', err);
+        return;
+      }
       if (!reply) return;
 
       if (reply === lastText) {
@@ -323,21 +330,91 @@
         if (fileTree) fileTree.showToast(`已达 ${bridgeMaxRounds} 轮，仍在继续...`);
       }
 
-      sendToClaude(reply);
+      // Auto-forward Qwen's reply to Claude Code
+      if (fileTree && fileTree.isBridgeAutoSendEnabled && !fileTree.isBridgeAutoSendEnabled()) {
+        return;
+      }
+      sendToClaude(reply, 'web_ai');
     }, 2000);
 
-    if (fileTree) fileTree.showToast('Bridge 已启动，等待新回复...');
-
-    // Keepalive: prevent SW from sleeping during long CC tasks
     bridgeKeepalive = setInterval(() => {
       if (bridgeActive) chrome.runtime.sendMessage({ type: 'KEEPALIVE' }).catch(() => {});
     }, 20000);
 
+    if (fileTree) {
+      fileTree.updateBridge(bridgeBusy ? 'sending' : 'waiting', bridgeRound);
+      if (showToast) fileTree.showToast('Bridge 已启动，等待新回复...');
+    }
+
     return true;
+  }
+
+  async function syncBridgeStatus() {
+    try {
+      const status = await chrome.runtime.sendMessage({ type: 'BRIDGE_STATUS' });
+      if (status && status.success && status.running) {
+        activateBridgeMonitoring({ busy: Boolean(status.busy) });
+        if (!status.busy && status.lastDone) {
+          handleBridgeDone(status.lastDone);
+        }
+        return true;
+      }
+      if (status && status.success && !status.running && bridgeActive) {
+        bridgeActive = false;
+        bridgeBusy = false;
+        if (bridgeCheckInterval) {
+          clearInterval(bridgeCheckInterval);
+          bridgeCheckInterval = null;
+        }
+        if (bridgeKeepalive) {
+          clearInterval(bridgeKeepalive);
+          bridgeKeepalive = null;
+        }
+        if (fileTree) fileTree.updateBridge('stopped', 0);
+      }
+    } catch (err) {
+      console.warn('[WebToAgent] Bridge status sync failed:', err);
+    }
+    return false;
+  }
+
+  async function startBridge() {
+    if (bridgeActive) return true;
+
+    // Validate before starting
+    let resp = null;
+    try {
+      const wantsDebugWindow = Boolean(fileTree && fileTree.isBridgeDebugWindowEnabled && fileTree.isBridgeDebugWindowEnabled());
+      resp = await chrome.runtime.sendMessage({
+        type: 'BRIDGE_START',
+        debugWindow: wantsDebugWindow
+      });
+      if (!resp.success) {
+        if (await syncBridgeStatus()) return true;
+        if (fileTree) fileTree.showToast(resp.error || '启动失败', 'error');
+        return false;
+      }
+      if (wantsDebugWindow && fileTree) {
+        if (resp.debugWindow) fileTree.appendBridgeLog('CMD 调试窗口已打开');
+        else fileTree.showToast('CMD 调试窗口打开失败，已继续后台运行', 'error');
+      }
+    } catch (err) {
+      console.error('[WebToAgent] Bridge start failed:', err);
+      if (await syncBridgeStatus()) return true;
+      if (fileTree) fileTree.showToast(`无法连接本地服务: ${err.message || err}`, 'error', 5000);
+      return false;
+    }
+
+    const activated = activateBridgeMonitoring({ showToast: true, busy: Boolean(resp && resp.busy) });
+    if (activated && fileTree && fileTree.setBridgeConsoleVisible) {
+      fileTree.setBridgeConsoleVisible(true);
+    }
+    return activated;
   }
 
   function stopBridge() {
     bridgeActive = false;
+    bridgeBusy = false;
     if (bridgeCheckInterval) {
       clearInterval(bridgeCheckInterval);
       bridgeCheckInterval = null;
@@ -346,34 +423,94 @@
       clearInterval(bridgeKeepalive);
       bridgeKeepalive = null;
     }
-    chrome.runtime.sendMessage({ type: 'BRIDGE_STOP' });
+    chrome.runtime.sendMessage({ type: 'BRIDGE_STOP' }).catch(() => {});
     if (fileTree) {
       fileTree.updateBridge('stopped', 0);
       fileTree.showToast('Bridge 已停止');
     }
   }
 
-  async function sendToClaude(text) {
-    if (fileTree) fileTree.updateBridge('sending', bridgeRound);
+  async function newBridgeSession() {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'BRIDGE_NEW_SESSION' });
+      if (!response.success) {
+        if (fileTree) fileTree.showToast(`新会话失败: ${response.error}`, 'error');
+        return false;
+      }
+      bridgeRound = 0;
+      bridgeLastDoneKey = '';
+      if (fileTree) {
+        fileTree.clearBridgeLog();
+        fileTree.updateBridge(bridgeActive ? 'waiting' : 'stopped', 0);
+        fileTree.showToast('已新建 Claude 会话');
+      }
+      return true;
+    } catch (err) {
+      if (fileTree) fileTree.showToast(`新会话失败: ${err.message}`, 'error');
+      return false;
+    }
+  }
+
+  async function sendToClaude(text, source = 'web_ai') {
+    bridgeBusy = true;
+    if (fileTree) {
+      fileTree.updateBridge('sending', bridgeRound);
+      if (fileTree.setBridgeConsoleVisible) fileTree.setBridgeConsoleVisible(true);
+      const label = source === 'direct' ? '用户直发' : '网页 AI';
+      fileTree.appendBridgeLog(`\n▶ 第 ${bridgeRound || 1} 轮\n${label} -> Claude Code\n${text}`, 'prompt');
+    }
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: 'BRIDGE_SEND',
-        text: text
+        text: text,
+        source
       });
 
       if (!response.success) {
+        bridgeBusy = false;
         if (fileTree) {
           fileTree.showToast(`发送失败: ${response.error}`, 'error');
           fileTree.updateBridge('waiting', bridgeRound);
         }
+        return false;
       }
+      return true;
     } catch (err) {
+      bridgeBusy = false;
       if (fileTree) {
         fileTree.showToast(`Bridge 连接错误: ${err.message}`, 'error');
         fileTree.updateBridge('waiting', bridgeRound);
       }
+      return false;
     }
+  }
+
+  // Send a user-typed message directly to Claude Code, bypassing the network AI.
+  // Available any time — works whether Bridge is running or stopped.
+  async function sendDirectToClaude(text) {
+    if (!text || !text.trim()) return false;
+
+    if (!bridgeActive) {
+      // Auto-start the bridge if user wants to talk to Claude directly
+      const ok = await startBridge(false);
+      if (!ok) return false;
+    }
+
+    if (bridgeBusy) {
+      if (fileTree) fileTree.showToast('Claude Code 正在执行上一轮，请稍候', 'error');
+      return false;
+    }
+
+    bridgeRound++;
+    // Mark this round's hash so the auto-watcher won't re-trigger on the
+    // current Qwen reply after the user manually intervened.
+    try {
+      const currentReply = currentAdapter.getLastAssistantMessage();
+      if (currentReply) bridgeLastHash = simpleHash(currentReply);
+    } catch {}
+
+    return await sendToClaude(text, 'direct');
   }
 
   function waitForSendEnabled(callback, attempts = 0) {
@@ -386,6 +523,45 @@
       callback();
     } else {
       setTimeout(() => waitForSendEnabled(callback, attempts + 1), 200);
+    }
+  }
+
+  function bridgeDoneKey(msg) {
+    return [
+      msg.source || '',
+      msg.round || '',
+      msg.sessionId || '',
+      msg.success ? (msg.text || '') : (msg.error || '')
+    ].join('|');
+  }
+
+  function handleBridgeDone(msg) {
+    if (!msg || msg.type !== 'BRIDGE_DONE') return;
+
+    const key = bridgeDoneKey(msg);
+    if (key && key === bridgeLastDoneKey) return;
+    bridgeLastDoneKey = key;
+
+    bridgeBusy = false;
+    if (msg.success) {
+      const resultText = msg.text || '';
+      const source = msg.source || 'web_ai';
+      if (fileTree) {
+        fileTree.appendBridgeLog('Claude Code -> 网页\n' + resultText.substring(0, 4000), 'assistant');
+        fileTree.showBridgeResult(resultText, () => {
+          currentAdapter.insertText(resultText, true);
+          waitForSendEnabled(() => {
+            currentAdapter.clickSend();
+          });
+        }, source);
+      }
+    } else {
+      if (fileTree) {
+        fileTree.appendBridgeLog('Claude Code 错误\n' + (msg.error || ''), 'error');
+        fileTree.showToast(`Claude Code error: ${msg.error}`, 'error');
+        fileTree.updateBridge('waiting', bridgeRound);
+      }
+      // Don't stop bridge on error - user controls stop manually
     }
   }
 
@@ -404,6 +580,10 @@
     }
 
     if (msg.type === 'BRIDGE_PROGRESS' && fileTree && bridgeActive) {
+      if (!bridgeBusy) {
+        bridgeBusy = true;
+        fileTree.updateBridge('sending', bridgeRound);
+      }
       const event = msg.event;
       if (!event) return;
 
@@ -411,10 +591,11 @@
       if (event.type === 'assistant' && event.message && event.message.content) {
         for (const block of event.message.content) {
           if (block.type === 'text' && block.text) {
-            fileTree.appendBridgeLog('💭 ' + block.text.substring(0, 200));
+            fileTree.appendBridgeLog('Claude 思考\n' + block.text.substring(0, 3000), 'assistant');
           }
           if (block.type === 'tool_use') {
-            fileTree.appendBridgeLog('🔧 ' + (block._summary || block.name));
+            const input = block.input ? `\n${JSON.stringify(block.input, null, 2).substring(0, 1200)}` : '';
+            fileTree.appendBridgeLog(`工具调用: ${block._summary || block.name}${input}`, 'tool');
           }
         }
       }
@@ -424,32 +605,31 @@
         for (const block of event.message.content) {
           if (block.type === 'tool_result' && block.content) {
             const text = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
-            fileTree.appendBridgeLog('✓ ' + text.substring(0, 100));
+            fileTree.appendBridgeLog('工具返回\n' + text.substring(0, 1600), block.is_error ? 'error' : 'tool');
           }
         }
+      }
+
+      if (event.type === 'result' && event.result) {
+        fileTree.appendBridgeLog('Claude 最终结果\n' + event.result.substring(0, 4000), 'assistant');
       }
     }
 
     if (msg.type === 'BRIDGE_DONE' && bridgeActive) {
-      if (msg.success) {
-        const resultText = msg.text || '';
-        if (fileTree) {
-          fileTree.showBridgeResult(resultText, () => {
-            currentAdapter.insertText(resultText, true);
-            waitForSendEnabled(() => {
-              currentAdapter.clickSend();
-            });
-          });
-        }
-      } else {
-        if (fileTree) fileTree.showToast(`Claude Code 错误: ${msg.error}`, 'error');
-        // Don't stop bridge on error - user controls stop manually
-      }
+      handleBridgeDone(msg);
     }
   });
 
   // Expose bridge controls for file-tree UI
-  window.__aifrBridge = { start: startBridge, stop: stopBridge, isActive: () => bridgeActive };
+  window.__aifrBridge = {
+    start: startBridge,
+    stop: stopBridge,
+    isActive: () => bridgeActive,
+    isBusy: () => bridgeBusy,
+    sendDirect: sendDirectToClaude,
+    syncStatus: syncBridgeStatus,
+    newSession: newBridgeSession
+  };
 
   // Start when DOM is ready
   if (document.readyState === 'loading') {

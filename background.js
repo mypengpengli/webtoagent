@@ -4,15 +4,24 @@ let nativePort = null;
 let nativeConnected = false;
 let pendingRequests = new Map();
 let requestId = 0;
+let activeBridgeTabId = null;
+let lastBridgeDone = null;
 
 function connectNativeHost() {
   try {
     nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
     nativePort.onMessage.addListener((msg) => {
-      // Handle unsolicited push messages
-      if (msg.type === 'FS_CHANGED' || msg.type === 'BRIDGE_PROGRESS' || msg.type === 'BRIDGE_DONE') {
+      if (msg.type === 'FS_CHANGED') {
         broadcastToTabs(msg);
+        return;
+      }
+
+      if (msg.type === 'BRIDGE_PROGRESS' || msg.type === 'BRIDGE_DONE') {
+        if (msg.type === 'BRIDGE_DONE') {
+          lastBridgeDone = msg;
+        }
+        sendToBridgeTab(msg);
         return;
       }
 
@@ -42,9 +51,35 @@ function connectNativeHost() {
 function broadcastToTabs(msg) {
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
-      try { chrome.tabs.sendMessage(tab.id, msg); } catch {}
+      if (!tab.id) continue;
+      sendToTab(tab.id, msg);
     }
   });
+}
+
+function sendToTab(tabId, msg) {
+  return chrome.tabs.sendMessage(tabId, msg).then(() => true).catch(() => {
+    // Most tabs do not run this extension's content script. Ignore them.
+    return false;
+  });
+}
+
+function sendToBridgeTab(msg) {
+  if (activeBridgeTabId === null) {
+    broadcastToTabs(msg);
+    return;
+  }
+
+  sendToTab(activeBridgeTabId, msg).then((sent) => {
+    if (!sent) {
+      activeBridgeTabId = null;
+      broadcastToTabs(msg);
+    }
+  });
+}
+
+function getSenderTabId(sender) {
+  return sender && sender.tab && typeof sender.tab.id === 'number' ? sender.tab.id : null;
 }
 
 function sendNativeMessage(msg, timeoutMs = 10000) {
@@ -97,13 +132,15 @@ async function ensureConnected() {
 
 // Handle messages from content scripts and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  handleMessage(message).then(sendResponse).catch(err => {
+  handleMessage(message, sender).then(sendResponse).catch(err => {
     sendResponse({ success: false, error: err.message });
   });
   return true; // async response
 });
 
-async function handleMessage(message) {
+async function handleMessage(message, sender) {
+  const senderTabId = getSenderTabId(sender);
+
   switch (message.type) {
     case 'FS_STATUS': {
       const native = await ensureConnected();
@@ -188,21 +225,60 @@ async function handleMessage(message) {
 
     case 'BRIDGE_START': {
       if (await ensureConnected()) {
-        return await sendNativeMessage({ action: 'claude_start', debugWindow: Boolean(message.debugWindow) });
+        const result = await sendNativeMessage({ action: 'claude_start', debugWindow: Boolean(message.debugWindow) });
+        if (result.success && senderTabId !== null) {
+          activeBridgeTabId = senderTabId;
+          lastBridgeDone = null;
+        }
+        return result;
       }
       return { success: false, error: 'Native host not connected' };
     }
 
+    case 'BRIDGE_STATUS': {
+      if (await ensureConnected()) {
+        const status = await sendNativeMessage({ action: 'claude_status' });
+        if (status.success && status.running && senderTabId !== null && activeBridgeTabId === null) {
+          activeBridgeTabId = senderTabId;
+        }
+        if (lastBridgeDone) {
+          status.lastDone = lastBridgeDone;
+        }
+        return status;
+      }
+      return { success: false, error: 'Native host not connected', running: false };
+    }
+
     case 'BRIDGE_SEND': {
       if (await ensureConnected()) {
-        return await sendNativeMessage({ action: 'claude_send', message: message.text });
+        const result = await sendNativeMessage({
+          action: 'claude_send',
+          message: message.text,
+          source: message.source || 'web_ai'
+        });
+        if (result.success && senderTabId !== null) {
+          activeBridgeTabId = senderTabId;
+          lastBridgeDone = null;
+        }
+        return result;
       }
       return { success: false, error: 'Native host not connected' };
     }
 
     case 'BRIDGE_STOP': {
       if (await ensureConnected()) {
+        if (senderTabId === null || senderTabId === activeBridgeTabId) {
+          activeBridgeTabId = null;
+        }
         return await sendNativeMessage({ action: 'claude_stop' });
+      }
+      return { success: false, error: 'Native host not connected' };
+    }
+
+    case 'BRIDGE_NEW_SESSION': {
+      if (await ensureConnected()) {
+        lastBridgeDone = null;
+        return await sendNativeMessage({ action: 'claude_new_session' });
       }
       return { success: false, error: 'Native host not connected' };
     }
@@ -220,7 +296,7 @@ chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-sidebar') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'TOGGLE_SIDEBAR' });
+        sendToTab(tabs[0].id, { type: 'TOGGLE_SIDEBAR' });
       }
     });
   }

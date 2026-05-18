@@ -1,138 +1,202 @@
 # WebToAgent
 
-[中文](./README_CN.md) | English
+English | [中文](./README_CN.md)
 
-A Chrome extension that lets web-based AI chatbots read your local files and orchestrate local coding agents — turning the best frontier models into project managers for your local tools.
+WebToAgent is a Chrome extension that connects web AI chat pages with your local project files and Claude Code. It gives ChatGPT, Qwen, Gemini, or Claude a practical way to read project context, then lets a local coding agent execute the work.
 
-## Why This Extension?
+Use the web model as the planner. Use Claude Code as the local worker.
 
-**Use the strongest models to guide cheaper ones.**
+## What It Does
 
-Web-based AI (ChatGPT, Claude, Gemini) always runs the latest, most capable models — with internet access, tool use, and massive context windows. But API-based coding agents (like Claude Code with Qwen-27B, DeepSeek, or local models) are much cheaper to run.
+- Browse local project files inside supported AI websites.
+- Click files to insert them as Markdown code blocks.
+- Upload images and binary assets from the sidebar.
+- Use `@filename` fuzzy search inside the chat input.
+- Send web AI replies to Claude Code automatically.
+- Watch Claude Code work in a built-in process drawer, with tool calls and results shown in real time.
+- Send Claude Code's result back to the web AI manually or automatically.
+- Keep Claude Code conversation context per working directory.
 
-With the **Bridge** feature, you can:
-- Let a frontier web model (GPT-4o, Claude Opus, Gemini) act as the **architect**
-- Let your local/cheap API model act as the **executor** (editing files, running tests)
-- The web model gives high-level instructions, the local model does the grunt work
-- Result: better output than the cheap model alone, at a fraction of the cost
+## Why Use It
 
-**Even without Bridge**, this extension saves you tons of copy-paste:
-- Click a file → instantly inserted into chat as a code block
-- Click an image → uploaded as an attachment automatically
-- Click a folder → all files loaded at once
-- No more dragging, uploading, or manual copy-paste
+Web AI products often have strong reasoning, search, and large context windows, but they cannot directly inspect or edit your local project. Local coding agents can read files, edit code, and run commands, but you may still want a stronger web model to review, plan, or coordinate the work.
 
-## Features
+WebToAgent bridges that gap:
 
-**File Access**
-- File tree sidebar — browse and click to insert
-- @ commands — `@filename` fuzzy search, `@foldername` batch-load
-- Image/binary upload — click to auto-upload via drag simulation
-- Auto file watching — edit in IDE, index updates automatically
-- .gitignore support — respects your project's ignore rules
+1. The web AI reviews the problem and gives instructions.
+2. WebToAgent forwards those instructions to Claude Code.
+3. Claude Code edits files and runs commands locally.
+4. WebToAgent shows the full process and returns the result to the web AI.
+5. The loop can continue until you stop it.
 
-**Bridge (AI ↔ Claude Code)**
-- Web AI replies → automatically sent to local Claude Code
-- Claude Code executes (edit files, run commands) → result sent back to web AI
-- Real-time progress log in sidebar (see every tool call as it happens)
-- Full auto or manual confirmation mode
-- Runs for as long as needed — no timeout, you control when to stop
+It also works as a simple file reader even when you do not use Bridge.
 
-**UX**
-- Keyboard shortcut `Ctrl+Shift+F`
-- Draggable 📁 button with status indicator
-- Insert history with undo
-- Quick prompt templates
-- Cross-tab file index sync
+## Core Features
 
-## Two Modes
+### File Reader
 
-| | Native Service | Browser Mode |
-|---|---|---|
-| Experience | Fully automatic, works on page load | Requires re-authorization after browser restart |
-| Setup | Node.js + double-click install script | Zero install |
-| How it works | Extension reads files via a local Node.js process | Browser's built-in File System Access API |
-| Best for | Daily use, Bridge feature, switching projects | Quick one-off use |
+- File tree sidebar for the current project.
+- One-click text file insertion.
+- Image/PDF/binary upload by simulated drag-and-drop.
+- Directory structure quick insert.
+- Insert history with undo.
+- `.gitignore` support.
+- File watcher for automatic index refresh.
+- Recent working directory switching.
 
-Falls back to browser mode automatically when native service is unavailable.
+### Bridge: Web AI to Claude Code
 
-## Install
+- Start/stop Bridge from the sidebar.
+- Optional full-auto mode: web AI reply -> Claude Code -> web AI.
+- Manual mode: review Claude Code output before sending it back.
+- Direct message box for talking to Claude Code at any time.
+- Built-in process drawer for detailed execution logs.
+- Optional CMD debug window for deeper troubleshooting.
+- Per-directory Claude Code session memory.
+- "New session" button when you want to reset Claude context.
+- Automatic recovery when an old Claude session ID is no longer valid.
 
-### Step 1: Load the Extension
+### User Experience
 
-1. Open Chrome → `chrome://extensions`
-2. Enable "Developer mode" (top right)
-3. Click "Load unpacked" → select this project folder
-
-### Step 2 (optional): Install Native Service
-
-Requires [Node.js](https://nodejs.org) v14+
-
-**Double-click `安装本地服务.bat` in the project root**
-
-Paste your extension ID when prompted → done. Restart Chrome.
-
-> Without native service, browser mode still works — click 📁 on any supported site and select a folder.
-
-## Usage
-
-### File Operations
-
-| Action | Effect |
-|--------|--------|
-| Click 📁 (or `Ctrl+Shift+F`) | Open/close file tree sidebar |
-| Click a file | Insert content as markdown code block |
-| Click an image/PDF | Auto-upload as attachment |
-| Type `@filename` | Fuzzy search → select → insert |
-| Type `@foldername` | Batch-load entire directory |
-| Drag the 📁 button | Reposition anywhere on page |
-
-### Bridge (Web AI ↔ Local Claude Code)
-
-1. Open sidebar → click **Bridge: 启动**
-2. Chat with the web AI normally (give it a coding task)
-3. When the AI replies, Bridge automatically sends the reply to your local Claude Code
-4. Claude Code executes the task (you see real-time progress in sidebar)
-5. Result appears in sidebar → click "发送到网页" to send back (or enable auto-send)
-6. Web AI sees the result and gives next instructions → loop continues
-7. Click **停止** whenever you want to end
-
-**Tips:**
-- Check "全自动发送" for fully autonomous operation
-- Check "显示 CMD 调试窗口" to see Claude Code's terminal
-- The sidebar log shows every tool call in real-time (💭 thinking, 🔧 tool use, ✓ result)
+- `Ctrl+Shift+F` toggles the sidebar.
+- Draggable floating button.
+- Search, quick prompts, and directory-structure insertion.
+- Clean sidebar for files and controls.
+- Separate process drawer for the detailed Claude Code timeline.
 
 ## Supported Sites
 
-- chat.qwen.ai (Qwen)
-- chatgpt.com (ChatGPT)
-- gemini.google.com (Gemini)
-- claude.ai (Claude)
+- `https://chat.qwen.ai/*`
+- `https://chatgpt.com/*`
+- `https://gemini.google.com/*`
+- `https://claude.ai/*`
+
+## Requirements
+
+For file browsing only:
+
+- Chrome or a Chromium-based browser.
+
+For the full native service and Bridge:
+
+- Node.js 14+
+- Claude Code installed and logged in
+- Windows install script is included
+
+Install Claude Code:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login
+```
+
+## Installation
+
+### 1. Load the Extension
+
+1. Open `chrome://extensions`.
+2. Enable Developer mode.
+3. Click "Load unpacked".
+4. Select this project folder.
+5. Copy the extension ID shown by Chrome.
+
+### 2. Install the Native Host
+
+Double-click:
+
+```text
+安装本地服务.bat
+```
+
+Paste the extension ID when prompted.
+
+The installer writes the Native Messaging manifest and registers:
+
+```text
+com.webtoagent.host
+```
+
+Then restart Chrome and open a supported AI website.
+
+## Basic Usage
+
+### Read Files in Web AI
+
+1. Open Qwen, ChatGPT, Gemini, or Claude.
+2. Click the WebToAgent floating button or press `Ctrl+Shift+F`.
+3. Select or switch your working directory.
+4. Click a file to insert it into the chat.
+5. Use the search box or type `@filename` in the chat input for faster access.
+
+### Insert Current Directory Structure
+
+Use the quick command:
+
+```text
+Current directory structure
+```
+
+It inserts a Markdown-style project tree so the AI understands the repository layout before reading individual files.
+
+## Bridge Workflow
+
+1. Open the sidebar.
+2. Click **Start** in the Bridge section.
+3. The Claude Code process drawer opens on the left.
+4. Ask the web AI for a coding plan or review.
+5. If auto-send is enabled, the web AI's latest reply is forwarded to Claude Code.
+6. Watch Claude Code's tool calls, command output, and final result in the process drawer.
+7. Send the result back to the web AI, or let auto-send do it.
+8. Click **Stop** when you want to pause the loop.
+
+Stopping Bridge does not erase Claude Code's conversation context. When you start again in the same working directory, WebToAgent tries to resume the previous Claude Code session.
+
+Use **New session** in the process drawer when you want Claude Code to forget the previous conversation and start fresh.
+
+## Bridge Controls
+
+| Control | Meaning |
+|---|---|
+| Start / Stop | Start or stop Bridge monitoring |
+| Auto send | Automatically forward web AI replies to Claude Code |
+| Show process | Show or hide the built-in Claude Code process drawer |
+| New session | Clear the saved Claude Code session for this working directory |
+| Direct message | Send your own instruction directly to Claude Code |
+| Show CMD debug window | Optional external CMD log window for troubleshooting |
+
+## Native vs Browser Mode
+
+| Mode | Best For | Notes |
+|---|---|---|
+| Native service | Daily use, Bridge, stable directory access | Requires Node.js and native host install |
+| Browser File System API | Quick file reading without install | May require re-authorization after restart |
+
+If the native host is unavailable, WebToAgent can still fall back to browser-based folder access.
+
+## Troubleshooting
+
+### Bridge says it is not started, but a CMD window is open
+
+Reload the extension at `chrome://extensions`, refresh the AI website, then start Bridge again. Chrome MV3 service workers can restart, so WebToAgent syncs state when the sidebar opens.
+
+### Direct send fails with "No conversation found with session ID"
+
+The saved Claude Code session is stale. WebToAgent now clears that stale session and retries automatically. You can also click **New session** manually.
+
+### Claude Code seems stuck
+
+Open the process drawer. If no new tool calls appear for a long time, Claude Code may be waiting for permission or authentication. Run `claude login` in a terminal if needed.
+
+### I changed code. Do I need to reinstall the native service?
+
+Usually no. Click refresh on the extension card in `chrome://extensions`, then refresh the AI website.
+
+Reinstall the native service only if the extension ID, native host name, or install location changed.
 
 ## Uninstall
 
-- Extension: Remove from `chrome://extensions`
-- Native service: Double-click `卸载本地服务.bat`
-
-> Normal code updates do NOT require reinstalling — just click refresh on `chrome://extensions`.
-
-## FAQ
-
-**Q: Do I need Claude Code installed for the Bridge feature?**
-
-Yes. Install it globally: `npm install -g @anthropic-ai/claude-code`, then run `claude login` once.
-
-**Q: Can I use a cheap model as the local executor?**
-
-Yes — configure Claude Code to use any model (Qwen-27B, DeepSeek, etc.) via its settings. The web AI provides the intelligence, the local model just follows instructions.
-
-**Q: I updated the code, do I need to reinstall?**
-
-No. Just click the refresh icon (↻) on your extension card in `chrome://extensions`, then refresh the AI website.
-
-**Q: The Bridge seems stuck / not responding?**
-
-Check the sidebar log. If it shows no activity for a long time, Claude Code might be waiting for permission. Open a terminal and check if there's a `claude` process running.
+- Remove the extension in `chrome://extensions`.
+- Double-click `卸载本地服务.bat` to unregister the native host.
 
 ## License
 

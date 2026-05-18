@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_LIST_ALL_FILES = 5000;
@@ -12,6 +12,7 @@ let recentRoots = [];
 let watcher = null;
 let watchDebounce = null;
 let gitignoreRules = [];
+let claudeSessions = {};
 
 function loadConfig() {
   const configPath = path.join(__dirname, 'config.json');
@@ -19,15 +20,17 @@ function loadConfig() {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     rootDir = config.rootDir || '';
     recentRoots = config.recentRoots || [];
+    claudeSessions = config.claudeSessions || {};
   } catch {
     rootDir = '';
     recentRoots = [];
+    claudeSessions = {};
   }
 }
 
 function saveConfig() {
   const configPath = path.join(__dirname, 'config.json');
-  fs.writeFileSync(configPath, JSON.stringify({ rootDir, recentRoots }, null, 2));
+  fs.writeFileSync(configPath, JSON.stringify({ rootDir, recentRoots, claudeSessions }, null, 2));
 }
 
 function addToRecent(dir) {
@@ -311,13 +314,70 @@ let claudeTimeout = null;
 let isFirstSend = true;
 let claudeDebugLogPath = '';
 let claudeDebugCmdPath = '';
+let _bridgeRoundCount = 0;
+let _bridgeRoundStartMs = 0;
+
+// ANSI color codes (work on Windows 10+ cmd / PowerShell with VT processing)
+const ANSI = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  bold: '\x1b[1m',
+  cyan: '\x1b[36m',
+  brightCyan: '\x1b[96m',
+  yellow: '\x1b[33m',
+  brightYellow: '\x1b[93m',
+  green: '\x1b[32m',
+  brightGreen: '\x1b[92m',
+  red: '\x1b[31m',
+  brightRed: '\x1b[91m',
+  magenta: '\x1b[35m',
+  gray: '\x1b[90m'
+};
+
+const SEP_LINE = '═'.repeat(64);
+const SUB_LINE = '─'.repeat(64);
+
+function resetClaudeSession() {
+  claudeSessionId = null;
+  isFirstSend = true;
+}
+
+function loadClaudeSessionForRoot() {
+  claudeSessionId = rootDir ? (claudeSessions[rootDir] || null) : null;
+  isFirstSend = !claudeSessionId;
+}
+
+function saveClaudeSessionForRoot() {
+  if (!rootDir || !claudeSessionId) return;
+  claudeSessions[rootDir] = claudeSessionId;
+  saveConfig();
+}
+
+function clearClaudeSessionForRoot() {
+  if (rootDir && claudeSessions[rootDir]) {
+    delete claudeSessions[rootDir];
+    saveConfig();
+  }
+  resetClaudeSession();
+}
 
 function claudeStart(options = {}) {
   if (!rootDir) {
     return { success: false, error: 'Please set a working directory first' };
   }
+
+  if (claudeRunning) {
+    let debugWindowOpened = Boolean(claudeDebugLogPath);
+    if (options.debugWindow && !debugWindowOpened) {
+      debugWindowOpened = startClaudeDebugWindow();
+    }
+    return { ...claudeStatus(), debugWindow: debugWindowOpened };
+  }
+
   claudeRunning = true;
-  isFirstSend = true;
+  loadClaudeSessionForRoot();
+  _bridgeRoundCount = 0;
+  _bridgeRoundStartMs = 0;
   claudeDebugLogPath = '';
   claudeDebugCmdPath = '';
 
@@ -336,9 +396,30 @@ function claudeStop() {
     killProcessTree(claudeProc.pid);
     claudeProc = null;
   }
-  writeClaudeDebugLog('');
-  writeClaudeDebugLog('[bridge] stopped');
+  writeBridgeStopped();
   return { success: true };
+}
+
+function claudeNewSession() {
+  if (claudeProc) {
+    return { success: false, error: 'Previous task still running' };
+  }
+  clearClaudeSessionForRoot();
+  _bridgeRoundCount = 0;
+  _bridgeRoundStartMs = 0;
+  writeClaudeDebugLog('[bridge] Claude session cleared; next message will start a new conversation');
+  return { success: true };
+}
+
+function claudeStatus() {
+  return {
+    success: true,
+    running: claudeRunning,
+    busy: Boolean(claudeProc),
+    rootDir,
+    debugWindow: Boolean(claudeDebugLogPath),
+    sessionId: claudeSessionId || null
+  };
 }
 
 function startClaudeDebugWindow() {
@@ -348,40 +429,63 @@ function startClaudeDebugWindow() {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     claudeDebugLogPath = path.join(os.tmpdir(), `aifr-claude-bridge-${stamp}.log`);
     claudeDebugCmdPath = path.join(os.tmpdir(), `aifr-claude-bridge-${stamp}.cmd`);
+    const psPath = path.join(os.tmpdir(), `aifr-claude-bridge-${stamp}.ps1`);
 
-    fs.writeFileSync(claudeDebugLogPath, [
-      'Claude Code Bridge Debug',
-      `Working directory: ${rootDir}`,
-      `Started: ${new Date().toLocaleString()}`,
+    const headerLines = [
+      `${ANSI.brightCyan}${SEP_LINE}${ANSI.reset}`,
+      `${ANSI.bold}${ANSI.brightCyan}  Claude Code Bridge — 实时对话回放${ANSI.reset}`,
+      `${ANSI.brightCyan}${SEP_LINE}${ANSI.reset}`,
+      `${ANSI.gray}工作目录:${ANSI.reset} ${rootDir}`,
+      `${ANSI.gray}启动时间:${ANSI.reset} ${new Date().toLocaleString()}`,
+      `${ANSI.gray}日志文件:${ANSI.reset} ${claudeDebugLogPath}`,
       '',
-      'Waiting for Claude Code activity...',
+      `${ANSI.dim}等待网页 AI 产生新回复...${ANSI.reset}`,
+      `${ANSI.dim}${SUB_LINE}${ANSI.reset}`,
       ''
-    ].join(os.EOL), 'utf8');
+    ];
+    fs.writeFileSync(claudeDebugLogPath, headerLines.join(os.EOL), 'utf8');
 
-    const escapedLogPath = claudeDebugLogPath.replace(/'/g, "''");
+    // PowerShell helper: enables VT (ANSI color) on the console, then tails the log
+    const psContent = [
+      '$ErrorActionPreference = "SilentlyContinue"',
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+      'try {',
+      '  $signature = @"',
+      '[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError=true)]',
+      'public static extern bool GetConsoleMode(System.IntPtr hConsoleHandle, out uint lpMode);',
+      '[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError=true)]',
+      'public static extern bool SetConsoleMode(System.IntPtr hConsoleHandle, uint dwMode);',
+      '[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError=true)]',
+      'public static extern System.IntPtr GetStdHandle(int nStdHandle);',
+      '"@',
+      '  $type = Add-Type -MemberDefinition $signature -Name "AifrConsole" -Namespace "Aifr" -PassThru -ErrorAction SilentlyContinue',
+      '  if ($type) {',
+      '    $h = $type::GetStdHandle(-11)',
+      '    $m = 0',
+      '    [void]$type::GetConsoleMode($h, [ref]$m)',
+      '    [void]$type::SetConsoleMode($h, $m -bor 0x0004)',
+      '  }',
+      '} catch {}',
+      `Get-Content -LiteralPath '${claudeDebugLogPath.replace(/'/g, "''")}' -Wait -Encoding UTF8`
+    ].join('\r\n');
+    fs.writeFileSync(psPath, psContent, 'utf8');
+
     const cmdContent = [
       '@echo off',
       'chcp 65001 >nul',
-      'title Claude Code Bridge Debug',
-      'echo Claude Code Bridge Debug',
-      `echo Log: ${claudeDebugLogPath}`,
-      'echo.',
-      `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Get-Content -LiteralPath '${escapedLogPath}' -Wait -Encoding UTF8"`,
+      'title Claude Code Bridge - 实时对话回放',
+      `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${psPath}"`,
       ''
     ].join('\r\n');
     fs.writeFileSync(claudeDebugCmdPath, cmdContent, 'utf8');
 
-    const comspec = process.env.ComSpec || 'cmd.exe';
-    const openResult = spawnSync(comspec, ['/d', '/c', 'start', '', claudeDebugCmdPath], {
+    const opener = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/c', 'start', '', claudeDebugCmdPath], {
       cwd: path.dirname(claudeDebugCmdPath),
-      encoding: 'utf8',
+      detached: true,
+      stdio: 'ignore',
       windowsHide: true
     });
-
-    if (openResult.error) throw openResult.error;
-    if (openResult.status !== 0) {
-      throw new Error((openResult.stderr || openResult.stdout || `cmd start exited with ${openResult.status}`).trim());
-    }
+    opener.unref();
 
     return true;
   } catch {
@@ -398,10 +502,137 @@ function writeClaudeDebugLog(text) {
   } catch {}
 }
 
+function nowStamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function formatDuration(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  const rs = (s - m * 60).toFixed(0);
+  return `${m}m${rs}s`;
+}
+
+function indentBlock(text, prefix) {
+  const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+  return lines.map(line => prefix + line).join(os.EOL);
+}
+
 function truncateDebugText(text, max = 2000) {
   if (!text) return '';
   const normalized = String(text).replace(/\r\n/g, '\n').trim();
-  return normalized.length > max ? normalized.slice(0, max) + '...' : normalized;
+  return normalized.length > max ? normalized.slice(0, max) + '\n...(已截断)' : normalized;
+}
+
+// === Section banners for the live log ===
+
+function bridgeSourceLabel(source) {
+  return source === 'direct' ? '用户直发' : '网页 AI';
+}
+
+function writeRoundHeader(roundNo, prompt, source = 'web_ai') {
+  if (!claudeDebugLogPath) return;
+  _bridgeRoundStartMs = Date.now();
+  const sourceLabel = bridgeSourceLabel(source);
+  const lines = [
+    '',
+    `${ANSI.brightCyan}${SEP_LINE}${ANSI.reset}`,
+    `${ANSI.bold}${ANSI.brightCyan}  ▶ 第 ${roundNo} 轮  ${ANSI.dim}${nowStamp()}${ANSI.reset}`,
+    `${ANSI.brightCyan}${SEP_LINE}${ANSI.reset}`,
+    '',
+    `${ANSI.bold}${ANSI.brightYellow}🌐 ${sourceLabel} → Claude Code${ANSI.reset}`,
+    `${ANSI.gray}${SUB_LINE}${ANSI.reset}`,
+    indentBlock(truncateDebugText(prompt, 4000), `${ANSI.yellow}│${ANSI.reset} `),
+    `${ANSI.gray}${SUB_LINE}${ANSI.reset}`,
+    ''
+  ];
+  fs.appendFileSync(claudeDebugLogPath, lines.join(os.EOL) + os.EOL, 'utf8');
+}
+
+function writeAssistantText(text) {
+  if (!claudeDebugLogPath || !text) return;
+  const trimmed = truncateDebugText(text, 3000);
+  const lines = [
+    `${ANSI.bold}${ANSI.brightGreen}💭 Claude 思考${ANSI.reset} ${ANSI.dim}${nowStamp()}${ANSI.reset}`,
+    indentBlock(trimmed, `${ANSI.green}│${ANSI.reset} `),
+    ''
+  ];
+  fs.appendFileSync(claudeDebugLogPath, lines.join(os.EOL) + os.EOL, 'utf8');
+}
+
+function writeToolUse(name, input, summary) {
+  if (!claudeDebugLogPath) return;
+  const head = `${ANSI.bold}${ANSI.brightCyan}🔧 工具调用${ANSI.reset} ${ANSI.cyan}${name}${ANSI.reset} ${ANSI.dim}${nowStamp()}${ANSI.reset}`;
+  const lines = [head, `${ANSI.cyan}│${ANSI.reset} ${summary}`];
+
+  // Show full bash commands and edit/write content for transparency
+  if (input) {
+    if (name === 'Bash' && input.command) {
+      lines.push(`${ANSI.cyan}│${ANSI.reset} ${ANSI.dim}cmd:${ANSI.reset} ${truncateDebugText(input.command, 500)}`);
+    } else if ((name === 'Write' || name === 'Edit') && (input.content || input.new_string)) {
+      const body = input.content || input.new_string;
+      lines.push(indentBlock(truncateDebugText(body, 800), `${ANSI.cyan}│${ANSI.reset} ${ANSI.dim}`) + ANSI.reset);
+    }
+  }
+  lines.push('');
+  fs.appendFileSync(claudeDebugLogPath, lines.join(os.EOL) + os.EOL, 'utf8');
+}
+
+function writeToolResult(content, isError) {
+  if (!claudeDebugLogPath) return;
+  const text = typeof content === 'string' ? content : JSON.stringify(content);
+  const color = isError ? ANSI.red : ANSI.gray;
+  const icon = isError ? '✗' : '✓';
+  const lines = [
+    `${color}${icon} 工具返回${ANSI.reset} ${ANSI.dim}${nowStamp()}${ANSI.reset}`,
+    indentBlock(truncateDebugText(text, 1200), `${color}│${ANSI.reset} ${ANSI.dim}`) + ANSI.reset,
+    ''
+  ];
+  fs.appendFileSync(claudeDebugLogPath, lines.join(os.EOL) + os.EOL, 'utf8');
+}
+
+function writeRoundFooter(success, resultText, errorText) {
+  if (!claudeDebugLogPath) return;
+  const elapsed = _bridgeRoundStartMs ? Date.now() - _bridgeRoundStartMs : 0;
+  const lines = [];
+
+  if (success) {
+    lines.push(
+      '',
+      `${ANSI.bold}${ANSI.brightYellow}🌐 Claude Code → 网页 AI${ANSI.reset}  ${ANSI.dim}耗时 ${formatDuration(elapsed)}${ANSI.reset}`,
+      `${ANSI.gray}${SUB_LINE}${ANSI.reset}`,
+      indentBlock(truncateDebugText(resultText || '(无内容)', 4000), `${ANSI.yellow}│${ANSI.reset} `),
+      `${ANSI.gray}${SUB_LINE}${ANSI.reset}`,
+      `${ANSI.brightGreen}✓ 第 ${_bridgeRoundCount} 轮完成${ANSI.reset}`,
+      ''
+    );
+  } else {
+    lines.push(
+      '',
+      `${ANSI.brightRed}✗ 第 ${_bridgeRoundCount} 轮失败${ANSI.reset}  ${ANSI.dim}耗时 ${formatDuration(elapsed)}${ANSI.reset}`,
+      `${ANSI.red}${SUB_LINE}${ANSI.reset}`,
+      indentBlock(errorText || '未知错误', `${ANSI.red}│${ANSI.reset} `),
+      `${ANSI.red}${SUB_LINE}${ANSI.reset}`,
+      ''
+    );
+  }
+  fs.appendFileSync(claudeDebugLogPath, lines.join(os.EOL) + os.EOL, 'utf8');
+}
+
+function writeBridgeStopped() {
+  if (!claudeDebugLogPath) return;
+  const lines = [
+    '',
+    `${ANSI.dim}${SEP_LINE}${ANSI.reset}`,
+    `${ANSI.dim}Bridge 已停止 — ${nowStamp()}${ANSI.reset}`,
+    `${ANSI.dim}${SEP_LINE}${ANSI.reset}`,
+    ''
+  ];
+  fs.appendFileSync(claudeDebugLogPath, lines.join(os.EOL) + os.EOL, 'utf8');
 }
 
 function writeClaudeDebugEvent(event) {
@@ -410,9 +641,9 @@ function writeClaudeDebugEvent(event) {
   if (event.type === 'assistant' && event.message && Array.isArray(event.message.content)) {
     for (const block of event.message.content) {
       if (block.type === 'text' && block.text) {
-        writeClaudeDebugLog(`[assistant] ${truncateDebugText(block.text)}`);
+        writeAssistantText(block.text);
       } else if (block.type === 'tool_use') {
-        writeClaudeDebugLog(`[tool] ${block._summary || getToolSummary(block.name, block.input)}`);
+        writeToolUse(block.name, block.input, block._summary || getToolSummary(block.name, block.input));
       }
     }
     return;
@@ -421,19 +652,21 @@ function writeClaudeDebugEvent(event) {
   if (event.type === 'user' && event.message && Array.isArray(event.message.content)) {
     for (const block of event.message.content) {
       if (block.type === 'tool_result' && block.content) {
-        const content = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
-        writeClaudeDebugLog(`[tool result] ${truncateDebugText(content)}`);
+        writeToolResult(block.content, Boolean(block.is_error));
       }
     }
     return;
   }
 
   if (event.type === 'result') {
-    writeClaudeDebugLog(`[result] ${truncateDebugText(event.result || '')}`);
+    // Final result is rendered by writeRoundFooter on close
     return;
   }
 
-  writeClaudeDebugLog(`[event] ${event.type || 'unknown'}`);
+  if (event.type === 'system') {
+    // Don't spam the log with system init events
+    return;
+  }
 }
 
 function killProcessTree(pid) {
@@ -446,7 +679,7 @@ function killProcessTree(pid) {
   } catch {}
 }
 
-function claudeSend(message) {
+function claudeSend(message, source = 'web_ai', options = {}) {
   if (!claudeRunning) {
     return { success: false, error: 'Bridge not started' };
   }
@@ -457,21 +690,17 @@ function claudeSend(message) {
     return { success: false, error: 'Previous task still running' };
   }
 
-  let prompt = message;
-  if (isFirstSend) {
+  let prompt = options.preparedPrompt || message;
+  if (!options.preparedPrompt && isFirstSend) {
     isFirstSend = false;
     prompt = `[System] You are an automated code executor. Follow instructions precisely. When the task is fully complete, end your response with <<<DONE>>>. Do not add pleasantries.\n\n${message}`;
   }
 
-  writeClaudeDebugLog('');
-  writeClaudeDebugLog('===== Claude Code task started =====');
-  writeClaudeDebugLog(`[time] ${new Date().toLocaleString()}`);
-  writeClaudeDebugLog(`[cwd] ${rootDir}`);
-  writeClaudeDebugLog(`[prompt] ${truncateDebugText(prompt)}`);
-  writeClaudeDebugLog('');
+  if (!options.sameRound) _bridgeRoundCount++;
+  writeRoundHeader(_bridgeRoundCount, prompt, source);
 
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--max-turns', '10', '--verbose'];
-  if (claudeSessionId) {
+  const args = ['-p', '--output-format', 'stream-json', '--max-turns', '10', '--verbose'];
+  if (claudeSessionId && !options.ignoreSession) {
     args.push('--resume', claudeSessionId);
   }
 
@@ -486,9 +715,13 @@ function claudeSend(message) {
     cwd: rootDir,
     shell: true,
     detached: process.platform !== 'win32',
+    stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: 'native-host' }
   });
   claudeProc = proc;
+
+  proc.stdin.write(prompt);
+  proc.stdin.end();
 
   function resetTimeout() {
     if (claudeTimeout) clearTimeout(claudeTimeout);
@@ -496,10 +729,10 @@ function claudeSend(message) {
       if (claudeProc) {
         killProcessTree(claudeProc.pid);
         claudeProc = null;
-        writeClaudeDebugLog('[error] Claude Code timeout (10 minutes without activity)');
+        writeRoundFooter(false, '', 'Claude Code 超时 (10 分钟无活动)');
         if (!doneSent) {
           doneSent = true;
-          sendMessage({ type: 'BRIDGE_DONE', success: false, error: 'Claude Code 超时 (10分钟无活动)' });
+          sendMessage({ type: 'BRIDGE_DONE', success: false, error: 'Claude Code 超时 (10分钟无活动)', source, round: _bridgeRoundCount });
         }
       }
     }, 10 * 60 * 1000);
@@ -525,10 +758,13 @@ function claudeSend(message) {
         }
         writeClaudeDebugEvent(event);
         sendMessage({ type: 'BRIDGE_PROGRESS', event });
-        if (event.session_id) claudeSessionId = event.session_id;
+        if (event.session_id && event.session_id !== claudeSessionId) {
+          claudeSessionId = event.session_id;
+          saveClaudeSessionForRoot();
+        }
         if (event.type === 'result') resultText = event.result || '';
       } catch {
-        writeClaudeDebugLog(`[raw] ${truncateDebugText(line)}`);
+        // ignore non-JSON lines (banners, warnings) — they go nowhere
       }
     }
   });
@@ -537,7 +773,6 @@ function claudeSend(message) {
     resetTimeout();
     const text = chunk.toString();
     stderr += text;
-    writeClaudeDebugLog(`[stderr] ${truncateDebugText(text)}`);
   });
 
   proc.on('close', (code) => {
@@ -546,19 +781,36 @@ function claudeSend(message) {
     if (doneSent) return;
     doneSent = true;
     if (code !== 0 && !resultText) {
-      writeClaudeDebugLog(`[done] failed: ${translateError(stderr, code)}`);
-      sendMessage({ type: 'BRIDGE_DONE', success: false, error: translateError(stderr, code) });
+      if (isMissingConversationError(stderr) && !options.retriedMissingSession) {
+        const staleSessionId = claudeSessionId;
+        clearClaudeSessionForRoot();
+        doneSent = false;
+        writeClaudeDebugLog(`[bridge] stale Claude session cleared${staleSessionId ? `: ${staleSessionId}` : ''}; retrying without --resume`);
+        claudeSend(message, source, {
+          preparedPrompt: prompt,
+          retriedMissingSession: true,
+          ignoreSession: true,
+          sameRound: true
+        });
+        return;
+      }
+      const errMsg = translateError(stderr, code);
+      writeRoundFooter(false, '', errMsg);
+      sendMessage({ type: 'BRIDGE_DONE', success: false, error: errMsg, source, round: _bridgeRoundCount });
     } else {
-      writeClaudeDebugLog(`[done] success`);
-      sendMessage({ type: 'BRIDGE_DONE', success: true, text: resultText || '(no output)', sessionId: claudeSessionId });
+      writeRoundFooter(true, resultText || '(无内容)', '');
+      sendMessage({ type: 'BRIDGE_DONE', success: true, text: resultText || '(no output)', sessionId: claudeSessionId, source, round: _bridgeRoundCount });
     }
   });
 
   proc.on('error', (err) => {
     claudeProc = null;
     if (claudeTimeout) { clearTimeout(claudeTimeout); claudeTimeout = null; }
-    writeClaudeDebugLog(`[error] ${translateError(err.message, null)}`);
-    sendMessage({ type: 'BRIDGE_DONE', success: false, error: translateError(err.message, null) });
+    if (doneSent) return;
+    doneSent = true;
+    const errMsg = translateError(err.message, null);
+    writeRoundFooter(false, '', errMsg);
+    sendMessage({ type: 'BRIDGE_DONE', success: false, error: errMsg, source, round: _bridgeRoundCount });
   });
 
   return { success: true, status: 'running' };
@@ -577,8 +829,14 @@ function getToolSummary(name, input) {
   }
 }
 
+function isMissingConversationError(errText) {
+  return /No conversation found with session ID/i.test(String(errText || ''));
+}
+
 function translateError(errText, code) {
   if (!errText) return `Exit code ${code}`;
+  if (isMissingConversationError(errText))
+    return 'Claude Code 会话已失效，请重新发送一次';
   if (errText.includes('ENOENT') || errText.includes('not recognized'))
     return '未检测到 Claude Code，请先安装 (npm install -g @anthropic-ai/claude-code)';
   if (errText.includes('Authentication') || errText.includes('auth'))
@@ -622,6 +880,7 @@ function handleMessage(msg) {
         return { success: false, error: 'Directory does not exist' };
       }
       rootDir = newRoot;
+      loadClaudeSessionForRoot();
       addToRecent(newRoot);
       saveConfig();
       loadGitignore();
@@ -648,9 +907,15 @@ function handleMessage(msg) {
     case 'claude_stop':
       return claudeStop();
 
+    case 'claude_new_session':
+      return claudeNewSession();
+
+    case 'claude_status':
+      return claudeStatus();
+
     case 'claude_send':
       if (!msg.message) return { success: false, error: 'Message required' };
-      return claudeSend(msg.message);
+      return claudeSend(msg.message, msg.source || 'web_ai');
 
     case 'ping':
       return { success: true, version: '1.1.0' };
