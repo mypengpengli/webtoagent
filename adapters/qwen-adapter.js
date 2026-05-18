@@ -29,6 +29,45 @@ class QwenAdapter extends BaseAdapter {
   }
 
   _getSendButton() {
-    return document.querySelector('[data-testid="send-button"], button[aria-label="发送"], [class*="send-btn"]');
+    const selectors = [
+      '[data-testid="send-button"]',
+      'button[aria-label="发送"]',
+      'button[aria-label*="发送"]',
+      'button[aria-label*="send" i]',
+      'button[type="submit"]',
+      'button[class*="send" i]',
+      '[role="button"][aria-label*="发送"]',
+      '[role="button"][aria-label*="send" i]'
+    ];
+    const input = this.getInputElement();
+    const roots = [
+      input && input.closest('form'),
+      input && input.closest('[class*="composer" i]'),
+      input && input.closest('[class*="input" i]'),
+      input && input.parentElement,
+      input && input.parentElement && input.parentElement.parentElement,
+      document
+    ].filter(Boolean);
+
+    for (const root of roots) {
+      for (const selector of selectors) {
+        const buttons = Array.from(root.querySelectorAll(selector));
+        const button = buttons.find(el => this._isVisible(el) && !this._looksLikeStopButton(el));
+        if (button) return button;
+      }
+    }
+
+    return null;
+  }
+
+  _isVisible(el) {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+  }
+
+  _looksLikeStopButton(el) {
+    const text = `${el.getAttribute('aria-label') || ''} ${el.textContent || ''} ${el.className || ''}`;
+    return /停止|stop|pause|中止/i.test(text);
   }
 }

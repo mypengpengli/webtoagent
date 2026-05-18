@@ -384,19 +384,13 @@
     // Validate before starting
     let resp = null;
     try {
-      const wantsDebugWindow = Boolean(fileTree && fileTree.isBridgeDebugWindowEnabled && fileTree.isBridgeDebugWindowEnabled());
       resp = await chrome.runtime.sendMessage({
-        type: 'BRIDGE_START',
-        debugWindow: wantsDebugWindow
+        type: 'BRIDGE_START'
       });
       if (!resp.success) {
         if (await syncBridgeStatus()) return true;
         if (fileTree) fileTree.showToast(resp.error || '启动失败', 'error');
         return false;
-      }
-      if (wantsDebugWindow && fileTree) {
-        if (resp.debugWindow) fileTree.appendBridgeLog('CMD 调试窗口已打开');
-        else fileTree.showToast('CMD 调试窗口打开失败，已继续后台运行', 'error');
       }
     } catch (err) {
       console.error('[WebToAgent] Bridge start failed:', err);
@@ -514,13 +508,15 @@
   }
 
   function waitForSendEnabled(callback, attempts = 0) {
-    if (attempts > 20) {
-      if (fileTree) fileTree.showToast('发送按钮未就绪，请手动发送', 'error');
-      return;
-    }
     const btn = currentAdapter._getSendButton();
-    if (btn && !btn.disabled) {
+    const isDisabled = currentAdapter._isDisabled
+      ? currentAdapter._isDisabled(btn)
+      : Boolean(btn && btn.disabled);
+    if (btn && !isDisabled) {
       callback();
+    } else if (attempts > 25) {
+      const submitted = currentAdapter.clickSend();
+      if (!submitted && fileTree) fileTree.showToast('发送按钮未就绪，请手动发送', 'error');
     } else {
       setTimeout(() => waitForSendEnabled(callback, attempts + 1), 200);
     }

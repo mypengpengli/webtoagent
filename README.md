@@ -47,11 +47,10 @@ It also works as a simple file reader even when you do not use Bridge.
 ### Bridge: Web AI to Claude Code
 
 - Start/stop Bridge from the sidebar.
-- Optional full-auto mode: web AI reply -> Claude Code -> web AI.
+- Separate auto-send options for web AI -> Claude Code and Claude Code -> web AI.
 - Manual mode: review Claude Code output before sending it back.
 - Direct message box for talking to Claude Code at any time.
 - Built-in process drawer for detailed execution logs.
-- Optional CMD debug window for deeper troubleshooting.
 - Per-directory Claude Code session memory.
 - "New session" button when you want to reset Claude context.
 - Automatic recovery when an old Claude session ID is no longer valid.
@@ -144,9 +143,9 @@ It inserts a Markdown-style project tree so the AI understands the repository la
 2. Click **Start** in the Bridge section.
 3. The Claude Code process drawer opens on the left.
 4. Ask the web AI for a coding plan or review.
-5. If auto-send is enabled, the web AI's latest reply is forwarded to Claude Code.
+5. If "web AI -> Claude Code" auto-send is enabled, the web AI's latest reply is forwarded to Claude Code.
 6. Watch Claude Code's tool calls, command output, and final result in the process drawer.
-7. Send the result back to the web AI, or let auto-send do it.
+7. Send the result back to the web AI manually, or enable "Claude Code -> web AI" auto-send.
 8. Click **Stop** when you want to pause the loop.
 
 Stopping Bridge does not erase Claude Code's conversation context. When you start again in the same working directory, WebToAgent tries to resume the previous Claude Code session.
@@ -158,11 +157,11 @@ Use **New session** in the process drawer when you want Claude Code to forget th
 | Control | Meaning |
 |---|---|
 | Start / Stop | Start or stop Bridge monitoring |
-| Auto send | Automatically forward web AI replies to Claude Code |
+| Auto send: web AI -> Claude Code | Automatically forward web AI replies to Claude Code |
+| Auto send: Claude Code -> web AI | Automatically send Claude Code results back to the web AI |
 | Show process | Show or hide the built-in Claude Code process drawer |
 | New session | Clear the saved Claude Code session for this working directory |
 | Direct message | Send your own instruction directly to Claude Code |
-| Show CMD debug window | Optional external CMD log window for troubleshooting |
 
 ## Native vs Browser Mode
 

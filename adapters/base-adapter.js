@@ -139,26 +139,61 @@ class BaseAdapter {
     const stopBtn = document.querySelector('[aria-label="Stop"], button[data-testid="stop-button"], .stop-button');
     if (stopBtn) return true;
     const sendBtn = this._getSendButton();
-    if (sendBtn && sendBtn.disabled) return true;
+    if (sendBtn && this._isDisabled(sendBtn)) return true;
     return false;
   }
 
   clickSend() {
     const sendBtn = this._getSendButton();
-    if (sendBtn) {
+    if (sendBtn && !this._isDisabled(sendBtn)) {
       sendBtn.click();
       return true;
     }
     // Fallback: simulate Enter key
     const el = this.getInputElement();
     if (el) {
-      el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }));
+      el.focus();
+      const form = el.closest && el.closest('form');
+      if (form && typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+        return true;
+      }
+      const eventInit = {
+        key: 'Enter',
+        code: 'Enter',
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      };
+      el.dispatchEvent(new KeyboardEvent('keydown', eventInit));
+      el.dispatchEvent(new KeyboardEvent('keypress', eventInit));
+      el.dispatchEvent(new KeyboardEvent('keyup', eventInit));
       return true;
     }
     return false;
   }
 
+  _isDisabled(el) {
+    if (!el) return true;
+    return Boolean(
+      el.disabled ||
+      el.getAttribute('disabled') !== null ||
+      el.getAttribute('aria-disabled') === 'true' ||
+      el.dataset.disabled === 'true' ||
+      /\bdisabled\b/i.test(String(el.className || ''))
+    );
+  }
+
   _getSendButton() {
-    return document.querySelector('[data-testid="send-button"], button[aria-label="Send"], button[aria-label="发送"]');
+    return document.querySelector([
+      '[data-testid="send-button"]',
+      'button[aria-label="Send"]',
+      'button[aria-label="发送"]',
+      'button[aria-label*="send" i]',
+      'button[aria-label*="发送"]',
+      'button[type="submit"]'
+    ].join(','));
   }
 }
