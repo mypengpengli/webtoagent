@@ -28,8 +28,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const siteCheckboxes = document.querySelectorAll('[data-site]');
-  const savedSites = await chrome.storage.sync.get('enabledSites');
-  const enabledSites = savedSites.enabledSites || ['chat.qwen.ai', 'chatgpt.com', 'gemini.google.com', 'claude.ai'];
+  const DEFAULT_ENABLED_SITES = [
+    'chat.qwen.ai',
+    'chatgpt.com',
+    'aistudio.google.com',
+    'gemini.google.com',
+    'claude.ai'
+  ];
+  const ENABLED_SITES_VERSION = 2;
+  const savedSites = await chrome.storage.sync.get(['enabledSites', 'enabledSitesVersion']);
+  let enabledSites = savedSites.enabledSites || DEFAULT_ENABLED_SITES;
+  if (savedSites.enabledSites && !savedSites.enabledSitesVersion) {
+    enabledSites = Array.from(new Set([...savedSites.enabledSites, 'aistudio.google.com']));
+    await chrome.storage.sync.set({ enabledSites, enabledSitesVersion: ENABLED_SITES_VERSION });
+  }
 
   siteCheckboxes.forEach(cb => {
     cb.checked = enabledSites.includes(cb.dataset.site);
@@ -37,7 +49,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const sites = Array.from(siteCheckboxes)
         .filter(c => c.checked)
         .map(c => c.dataset.site);
-      await chrome.storage.sync.set({ enabledSites: sites });
+      await chrome.storage.sync.set({ enabledSites: sites, enabledSitesVersion: ENABLED_SITES_VERSION });
     });
   });
 

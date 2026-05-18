@@ -4,8 +4,18 @@
   const ADAPTERS = [
     new QwenAdapter(),
     new ChatGPTAdapter(),
+    new AIStudioAdapter(),
     new GeminiAdapter(),
     new ClaudeAdapter()
+  ];
+
+  const ENABLED_SITES_VERSION = 2;
+  const DEFAULT_ENABLED_SITES = [
+    'chat.qwen.ai',
+    'chatgpt.com',
+    'aistudio.google.com',
+    'gemini.google.com',
+    'claude.ai'
   ];
 
   let currentAdapter = null;
@@ -179,8 +189,12 @@
 
     // Check if site is enabled
     try {
-      const data = await chrome.storage.sync.get('enabledSites');
-      const enabledSites = data.enabledSites || ['chat.qwen.ai', 'chatgpt.com', 'gemini.google.com', 'claude.ai'];
+      const data = await chrome.storage.sync.get(['enabledSites', 'enabledSitesVersion']);
+      let enabledSites = data.enabledSites || DEFAULT_ENABLED_SITES;
+      if (data.enabledSites && !data.enabledSitesVersion) {
+        enabledSites = Array.from(new Set([...data.enabledSites, 'aistudio.google.com']));
+        chrome.storage.sync.set({ enabledSites, enabledSitesVersion: ENABLED_SITES_VERSION }).catch(() => {});
+      }
       if (!enabledSites.includes(currentAdapter.getHostname())) return;
     } catch {}
 
@@ -449,7 +463,6 @@
     bridgeBusy = true;
     if (fileTree) {
       fileTree.updateBridge('sending', bridgeRound);
-      if (fileTree.setBridgeConsoleVisible) fileTree.setBridgeConsoleVisible(true);
       const label = source === 'direct' ? '用户直发' : '网页 AI';
       fileTree.appendBridgeLog(`\n▶ 第 ${bridgeRound || 1} 轮\n${label} -> Claude Code\n${text}`, 'prompt');
     }

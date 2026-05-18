@@ -186,14 +186,77 @@ class BaseAdapter {
     );
   }
 
-  _getSendButton() {
-    return document.querySelector([
+  _isVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+  }
+
+  _looksLikeStopButton(el) {
+    const text = [
+      el.getAttribute('aria-label') || '',
+      el.getAttribute('title') || '',
+      el.textContent || '',
+      el.className || ''
+    ].join(' ');
+    return /停止|中止|stop|pause|cancel|interrupt/i.test(text);
+  }
+
+  _findSendButton(extraSelectors = [], extraRoots = []) {
+    const selectors = [
+      ...extraSelectors,
       '[data-testid="send-button"]',
       'button[aria-label="Send"]',
       'button[aria-label="发送"]',
       'button[aria-label*="send" i]',
       'button[aria-label*="发送"]',
-      'button[type="submit"]'
-    ].join(','));
+      'button[aria-label*="提交"]',
+      'button[title*="send" i]',
+      'button[title*="发送"]',
+      'button[type="submit"]',
+      'button[class*="send" i]',
+      '[role="button"][aria-label*="send" i]',
+      '[role="button"][aria-label*="发送"]'
+    ];
+
+    const input = this.getInputElement();
+    const roots = [
+      ...extraRoots,
+      input && input.closest('form'),
+      input && input.closest('[role="form"]'),
+      input && input.closest('[class*="composer" i]'),
+      input && input.closest('[class*="prompt" i]'),
+      input && input.closest('[class*="input" i]'),
+      input && input.parentElement,
+      input && input.parentElement && input.parentElement.parentElement,
+      document
+    ].filter(Boolean);
+
+    for (const root of roots) {
+      for (const selector of selectors) {
+        const candidates = Array.from(root.querySelectorAll(selector));
+        const button = candidates.find(el => this._isVisible(el) && !this._looksLikeStopButton(el));
+        if (button) return button;
+      }
+    }
+
+    return null;
+  }
+
+  _lastTextFromSelectors(selectors) {
+    const elements = [];
+    for (const selector of selectors) {
+      elements.push(...document.querySelectorAll(selector));
+    }
+    for (let i = elements.length - 1; i >= 0; i--) {
+      const text = (elements[i].textContent || elements[i].innerText || '').trim();
+      if (text) return text;
+    }
+    return null;
+  }
+
+  _getSendButton() {
+    return this._findSendButton();
   }
 }

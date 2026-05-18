@@ -59,6 +59,7 @@ WebToAgent 是一个 Chrome 扩展，用来把网页端 AI 聊天页面、本地
 
 - `https://chat.qwen.ai/*`
 - `https://chatgpt.com/*`
+- `https://aistudio.google.com/*`
 - `https://gemini.google.com/*`
 - `https://claude.ai/*`
 

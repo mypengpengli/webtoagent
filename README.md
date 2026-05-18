@@ -67,6 +67,7 @@ It also works as a simple file reader even when you do not use Bridge.
 
 - `https://chat.qwen.ai/*`
 - `https://chatgpt.com/*`
+- `https://aistudio.google.com/*`
 - `https://gemini.google.com/*`
 - `https://claude.ai/*`
 

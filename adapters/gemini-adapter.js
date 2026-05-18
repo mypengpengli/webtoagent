@@ -8,6 +8,8 @@ class GeminiAdapter extends BaseAdapter {
            document.querySelector('div[contenteditable="true"][aria-label]') ||
            document.querySelector('.text-input-field_textarea') ||
            document.querySelector('rich-textarea div[contenteditable="true"]') ||
+           document.querySelector('textarea[aria-label]') ||
+           document.querySelector('textarea') ||
            document.querySelector('div[contenteditable="true"]');
   }
 
@@ -18,16 +20,29 @@ class GeminiAdapter extends BaseAdapter {
   }
 
   getLastAssistantMessage() {
-    const messages = document.querySelectorAll('model-response, .model-response-text, [class*="response-container"]');
-    if (messages.length === 0) return null;
-    return messages[messages.length - 1].textContent || '';
+    return this._lastTextFromSelectors([
+      'model-response',
+      '[id^="model-response-message-content"]',
+      '.model-response-text',
+      '[class*="model-response"]',
+      '[class*="response-container"]',
+      '[class*="conversation-turn"] [class*="response"]'
+    ]);
   }
 
   isGenerating() {
-    return !!document.querySelector('[class*="loading"], [class*="streaming"], button[aria-label="Stop"]');
+    return !!document.querySelector('[class*="loading"], [class*="streaming"], button[aria-label="Stop"], button[aria-label*="停止"]');
   }
 
   _getSendButton() {
-    return document.querySelector('button[aria-label="Send message"], button.send-button, [class*="send"]');
+    return this._findSendButton([
+      'button[aria-label="Send message"]',
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="发送"]',
+      'button.send-button',
+      'button[class*="send" i]',
+      '[role="button"][aria-label*="Send" i]',
+      '[role="button"][aria-label*="发送"]'
+    ]);
   }
 }

@@ -7,6 +7,8 @@ class ClaudeAdapter extends BaseAdapter {
     return document.querySelector('div.ProseMirror[contenteditable="true"]') ||
            document.querySelector('div[contenteditable="true"][translate="no"]') ||
            document.querySelector('fieldset div[contenteditable="true"]') ||
+           document.querySelector('[contenteditable="true"][role="textbox"]') ||
+           document.querySelector('textarea') ||
            document.querySelector('div[contenteditable="true"]');
   }
 
@@ -17,20 +19,31 @@ class ClaudeAdapter extends BaseAdapter {
   }
 
   getLastAssistantMessage() {
-    const messages = document.querySelectorAll('[data-is-streaming], .font-claude-message, [class*="assistant"]');
-    if (messages.length === 0) {
+    const text = this._lastTextFromSelectors([
+      '.font-claude-message',
+      '[data-is-streaming]',
+      '[data-testid="message-content"]',
+      '[class*="assistant"]'
+    ]);
+    if (!text) {
       const allMsgs = document.querySelectorAll('.grid-cols-1 > div');
       if (allMsgs.length >= 2) return allMsgs[allMsgs.length - 1].textContent || '';
       return null;
     }
-    return messages[messages.length - 1].textContent || '';
+    return text;
   }
 
   isGenerating() {
-    return !!document.querySelector('button[aria-label="Stop Response"], [data-is-streaming="true"]');
+    return !!document.querySelector('button[aria-label="Stop Response"], button[aria-label*="Stop" i], [data-is-streaming="true"]');
   }
 
   _getSendButton() {
-    return document.querySelector('button[aria-label="Send Message"], button[aria-label="发送消息"]');
+    return this._findSendButton([
+      'button[aria-label="Send Message"]',
+      'button[aria-label="发送消息"]',
+      'button[aria-label*="Send" i]',
+      'button[aria-label*="发送"]',
+      'button[type="submit"]'
+    ]);
   }
 }
