@@ -62,21 +62,33 @@ function pickRootDirectory() {
   const script = `
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     Add-Type -AssemblyName System.Windows.Forms
-    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
-    $dialog.Description = '选择 WebToAgent 工作目录'
-    $dialog.ShowNewFolderButton = $true
     $initial = $env:WEBTOAGENT_INITIAL_DIR
-    if ($initial -and (Test-Path -LiteralPath $initial)) {
-      $dialog.SelectedPath = $initial
+    if (-not $initial -or -not (Test-Path -LiteralPath $initial)) {
+      $initial = [Environment]::GetFolderPath('MyDocuments')
     }
-    $owner = New-Object System.Windows.Forms.Form
-    $owner.TopMost = $true
-    $owner.ShowInTaskbar = $false
-    $result = $dialog.ShowDialog($owner)
-    $owner.Dispose()
-    if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.SelectedPath) {
-      Write-Output $dialog.SelectedPath
-      exit 0
+    $dialog = New-Object System.Windows.Forms.OpenFileDialog
+    $dialog.Title = '选择 WebToAgent 工作目录'
+    $dialog.InitialDirectory = $initial
+    $dialog.CheckFileExists = $false
+    $dialog.CheckPathExists = $true
+    $dialog.ValidateNames = $false
+    $dialog.DereferenceLinks = $true
+    $dialog.FileName = '选择此文件夹'
+    $dialog.Filter = '文件夹|*.folder'
+    $dialog.Multiselect = $false
+
+    $result = $dialog.ShowDialog()
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.FileName) {
+      $selected = $dialog.FileName
+      if (Test-Path -LiteralPath $selected -PathType Container) {
+        [Console]::Out.WriteLine((Resolve-Path -LiteralPath $selected).Path)
+        exit 0
+      }
+      $parent = Split-Path -Parent $selected
+      if ($parent -and (Test-Path -LiteralPath $parent -PathType Container)) {
+        [Console]::Out.WriteLine((Resolve-Path -LiteralPath $parent).Path)
+        exit 0
+      }
     }
     exit 2
   `;
@@ -91,10 +103,14 @@ function pickRootDirectory() {
   ], {
     encoding: 'utf8',
     windowsHide: false,
+    timeout: 5 * 60 * 1000,
     env: { ...process.env, WEBTOAGENT_INITIAL_DIR: rootDir || process.cwd() }
   });
 
   if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      return { success: false, error: 'Folder picker timed out' };
+    }
     return { success: false, error: result.error.message };
   }
   if (result.status === 2) {
