@@ -55,10 +55,12 @@
       position: fixed;
       right: 12px;
       bottom: 80px;
-      width: 44px;
-      height: 44px;
-      background: #1e1e2e;
-      border: 1px solid #45475a;
+      width: 46px;
+      height: 46px;
+      background: rgba(30, 30, 46, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(137, 180, 250, 0.25);
       border-radius: 50%;
       display: flex;
       align-items: center;
@@ -66,8 +68,8 @@
       cursor: pointer;
       z-index: 2147483645;
       font-size: 20px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
       user-select: none;
     `;
     toggleBtn.innerHTML = '📁';
@@ -91,11 +93,13 @@
 
     toggleBtn.addEventListener('mouseenter', () => {
       toggleBtn.style.transform = 'scale(1.1)';
-      toggleBtn.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
+      toggleBtn.style.boxShadow = '0 6px 24px rgba(137,180,250,0.2), inset 0 1px 0 rgba(255,255,255,0.08)';
+      toggleBtn.style.borderColor = 'rgba(137, 180, 250, 0.5)';
     });
     toggleBtn.addEventListener('mouseleave', () => {
       toggleBtn.style.transform = 'scale(1)';
-      toggleBtn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
+      toggleBtn.style.boxShadow = '0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05)';
+      toggleBtn.style.borderColor = 'rgba(137, 180, 250, 0.25)';
     });
 
     // Draggable
