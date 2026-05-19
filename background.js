@@ -201,6 +201,13 @@ async function handleMessage(message, sender) {
       return { success: true, rootDir: message.path };
     }
 
+    case 'FS_PICK_ROOT': {
+      if (await ensureConnected()) {
+        return await sendNativeMessage({ action: 'pick_root' }, 5 * 60 * 1000);
+      }
+      return { success: false, error: 'Native host not connected', fallback: true };
+    }
+
     case 'FS_GET_ROOT': {
       if (await ensureConnected()) {
         return await sendNativeMessage({ action: 'get_root' });

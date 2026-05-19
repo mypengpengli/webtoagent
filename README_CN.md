@@ -1,59 +1,89 @@
 # WebToAgent
 
-[English](./README.md) | 中文
+中文 | [English](./README.md)
 
-WebToAgent 是一个 Chrome 扩展，用来把网页端 AI 聊天页面、本地项目文件、Claude Code 连接起来。它可以让 Qwen、ChatGPT、Gemini、Claude 这类网页 AI 更方便地读取你的项目上下文，也可以让网页 AI 指挥本地 Claude Code 执行改代码、跑命令、看结果。
+WebToAgent 是一个 Chrome 扩展，用来把 **网页端大模型、本地项目文件、GitHub/网页搜索、Claude Code** 串起来。
 
-一句话：网页 AI 负责思考和决策，Claude Code 负责在本地项目里执行。
+一句话：让网页端大模型做“项目大脑”，让本地 Claude Code 做“执行工人”。
 
-## 它能解决什么问题
+你可以在 Qwen、ChatGPT、Gemini、Claude 这类网页 AI 里直接读取本地项目文件，也可以让网页 AI 先结合搜索结果、GitHub 仓库、官方文档、Issue/PR 讨论来判断方向，再把具体修改任务交给本地 Claude Code 执行。
 
-平时在网页 AI 里问代码问题，经常要一个文件一个文件上传、复制、粘贴。WebToAgent 可以把本地项目变成网页 AI 旁边的文件面板：
+## 为什么需要它
 
-- 点一下文件，内容自动插入聊天框。
-- 点图片或 PDF，自动作为附件上传。
-- 输入 `@文件名`，快速模糊搜索并插入。
-- 一键插入当前目录结构。
-- 网页 AI 的回复可以自动转给 Claude Code。
-- Claude Code 的执行过程会显示在内置过程抽屉里。
-- Claude Code 的结果可以自动或手动发回网页 AI。
+网页端大模型通常有几个优势：
 
-不用 Bridge 的时候，它就是一个方便的网页 AI 文件读取助手。启用 Bridge 后，它就变成“网页 AI + 本地智能体”的协作工具。
+- 模型更新快，推理能力强。
+- 很多网页 AI 支持联网搜索、读取网页、查看 GitHub 页面。
+- 适合做架构判断、方案比较、代码审查、查新文档。
+
+本地编程智能体也有几个优势：
+
+- 能真正读取本机项目文件。
+- 能修改代码、运行命令、查看结果。
+- 可以用更便宜或更适合执行的模型长期跑任务。
+
+但它们之间以前是断开的：网页 AI 看不到你的本地项目，本地智能体又不一定有最强的搜索和规划能力。WebToAgent 要解决的就是这个断点。
+
+## 典型工作流
+
+1. 你在网页 AI 里提出需求，比如“帮我看看这个功能怎么设计”。
+2. 网页 AI 可以结合它自己的搜索能力、GitHub 仓库页面、官方文档和你插入的本地文件来分析。
+3. WebToAgent 把网页 AI 的结论转给本地 Claude Code。
+4. Claude Code 在你的本地项目里改文件、跑命令、看报错。
+5. 执行过程会显示在 WebToAgent 的过程面板里。
+6. Claude Code 的结果再发回网页 AI，由网页 AI 继续判断下一步。
+
+这样就变成了一个协作链路：
+
+```text
+网页端大模型：搜索、理解、规划、审查
+        ↓
+WebToAgent：转发上下文、展示过程、管理文件
+        ↓
+Claude Code：读取项目、修改代码、运行命令
+```
+
+## 它适合什么场景
+
+- 让网页 AI 先读 GitHub README、Issue、PR，再指导本地智能体改你的本地代码。
+- 让网页 AI 搜索最新 API 文档，然后让 Claude Code 按最新写法修改项目。
+- 让强模型做代码审查，低成本/本地模型按审查意见执行。
+- 在网页 AI 里一键插入本地文件、目录结构，不再反复复制粘贴。
+- 让网页 AI 和 Claude Code 自动来回协作，适合长任务、重构、排错。
+- 一边看 Claude Code 的执行过程，一边随时手动插话补充要求。
 
 ## 核心功能
 
 ### 本地文件读取
 
-- 侧边栏文件树，浏览当前项目。
-- 点击文本文件，按 Markdown 代码块插入。
-- 点击图片、PDF、二进制文件，自动模拟拖拽上传。
-- 支持 `@filename` 自动补全和模糊搜索。
-- 支持“当前目录结构”快捷命令。
-- 支持插入历史和撤销。
-- 支持 `.gitignore` 过滤。
-- 支持文件监听，IDE 里改了文件后索引会更新。
-- 支持切换最近工作目录。
+- 右侧文件树直接浏览当前项目。
+- 点击文本文件，自动按 Markdown 代码块插入聊天框。
+- 点击图片、PDF、二进制文件，自动模拟上传。
+- 输入 `@文件名` 快速搜索并插入文件。
+- 一键插入“当前目录结构”，让 AI 先理解项目骨架。
+- 支持 `.gitignore` 过滤，减少无关文件干扰。
+- 支持文件监听，IDE 里改了文件后索引会刷新。
+- 支持最近工作目录和系统文件夹选择器，不用手动复制路径。
 
-### Bridge：让网页 AI 指挥 Claude Code
+### Bridge：网页 AI 指挥 Claude Code
 
-- 点击启动后，网页 AI 的回复可以自动发送给 Claude Code。
-- Claude Code 在本地项目里改文件、读文件、跑命令。
-- 执行过程显示在左侧“Claude Code 过程”抽屉里。
-- 可以手动确认 Claude Code 结果后再发回网页 AI。
+- 点击启动后，网页 AI 的回复可以自动转给 Claude Code。
+- Claude Code 在本地项目里读文件、改文件、跑命令。
+- Claude Code 的执行过程显示在左侧“Claude Code 过程”面板里。
+- 可以手动确认结果后再发回网页 AI。
 - 也可以开启全自动，让网页 AI 和 Claude Code 循环协作。
-- 随时可以直接给 Claude Code 发消息，绕过网页 AI。
-- 默认按工作目录保存 Claude Code 会话。
-- 停止 Bridge 不会丢失 Claude 上下文。
-- 需要清空上下文时，点“新会话”。
-- 如果旧 session 失效，会自动新建会话并重试。
+- 可以随时直接给 Claude Code 发消息，不需要经过网页 AI。
+- 默认按工作目录保存 Claude Code 会话，停止后再启动还能继续上下文。
+- 需要重新开始时，可以点“新会话”清空当前目录的 Claude 上下文。
 
 ### 交互体验
 
-- `Ctrl+Shift+F` 打开或关闭侧边栏。
-- 悬浮按钮可拖动。
-- 右侧侧边栏保持清爽，主要放文件、搜索、开关。
-- 左侧过程抽屉显示详细执行日志。
-- 过程抽屉底部可以直接给 Claude Code 发送消息。
+- `Ctrl+Shift+F` 打开或关闭 WebToAgent 侧边栏。
+- 右侧目录面板用于文件、搜索、开关和快捷指令。
+- 左侧过程面板用于看 Claude Code 的完整执行过程。
+- 过程面板可以单独显示，右侧目录面板可以隐藏。
+- 过程面板宽度可以拖动调整，并会记住上次宽度。
+- 过程面板底部支持直接输入给 Claude Code，`Enter` 发送，`Shift+Enter` 换行。
 
 ## 支持的网站
 
@@ -112,15 +142,15 @@ com.webtoagent.host
 
 ## 基础用法
 
-### 在网页 AI 里读取文件
+### 读取本地文件
 
-1. 打开 Qwen、ChatGPT、Gemini 或 Claude。
+1. 打开 Qwen、ChatGPT、AI Studio、Gemini 或 Claude。
 2. 点击 WebToAgent 悬浮按钮，或按 `Ctrl+Shift+F`。
-3. 设置或切换工作目录。
+3. 选择或切换工作目录。
 4. 点击文件，内容会自动插入聊天框。
 5. 也可以在聊天框里输入 `@文件名` 快速搜索。
 
-### 插入当前目录结构
+### 插入目录结构
 
 点击快捷命令：
 
@@ -130,20 +160,26 @@ com.webtoagent.host
 
 它会插入一个 Markdown 风格的项目目录树，让 AI 先理解项目结构，再继续读取具体文件。
 
+### 使用网页搜索和 GitHub
+
+如果你使用的网页 AI 支持搜索或网页访问，可以直接把 GitHub 仓库、Issue、PR、官方文档链接发给它，让它先理解外部背景。
+
+然后用 WebToAgent 插入本地关键文件，或者让网页 AI 的结论通过 Bridge 发给 Claude Code。这样网页 AI 负责“查资料和做判断”，Claude Code 负责“在本地执行修改”。
+
 ## Bridge 用法
 
 1. 打开 WebToAgent 侧边栏。
 2. 在 Bridge 区域点击 **启动**。
-3. 左侧会弹出 **Claude Code 过程** 抽屉。
+3. 左侧会弹出 **Claude Code 过程** 面板。
 4. 正常向网页 AI 提问，比如让它分析代码、制定修改方案。
 5. 如果开启“全自动发送（网页 AI 回复后自动转给 Claude）”，网页 AI 的最新回复会自动转给 Claude Code。
-6. 在过程抽屉里查看 Claude Code 的工具调用、命令输出和最终结果。
+6. 在过程面板里查看 Claude Code 的工具调用、命令输出和最终结果。
 7. 结果可以手动发回网页 AI；开启“全自动发送（Claude 回复后自动给网页）”后也可以自动发回。
 8. 点击 **停止** 可以暂停 Bridge。
 
 停止 Bridge 不会清空 Claude Code 的上下文。同一个工作目录再次启动时，会优先继续上次 Claude Code 会话。
 
-如果你想让 Claude Code 忘掉之前的上下文，点击过程抽屉里的 **新会话**。
+如果你想让 Claude Code 忘掉之前的上下文，点击过程面板里的 **新会话**。
 
 ## Bridge 控件说明
 
@@ -152,7 +188,8 @@ com.webtoagent.host
 | 启动 / 停止 | 启动或停止 Bridge 监听 |
 | 全自动发送（网页 AI 回复后自动转给 Claude） | 网页 AI 回复后自动转给 Claude Code |
 | 全自动发送（Claude 回复后自动给网页） | Claude Code 返回结果后自动发回网页 AI |
-| 显示过程 / 隐藏过程 | 展开或收起左侧 Claude Code 过程抽屉 |
+| 显示过程 / 隐藏过程 | 展开或收起 Claude Code 过程面板 |
+| 隐藏目录 / 显示目录 | 只隐藏右侧文件目录，保留过程面板 |
 | 新会话 | 清空当前工作目录保存的 Claude Code 会话 |
 | 直接对 Claude 说 | 不经过网页 AI，直接给 Claude Code 下指令 |
 
@@ -167,17 +204,21 @@ com.webtoagent.host
 
 ## 常见问题
 
+### 我一定要用 Bridge 吗
+
+不需要。只把它当成本地文件读取助手也很好用：点文件、插目录结构、上传图片、搜索文件，都可以单独使用。
+
 ### Bridge 显示未启动，但 CMD 窗口还在
 
 到 `chrome://extensions` 刷新扩展，再刷新 AI 网站页面。Chrome MV3 的后台 Service Worker 会休眠重启，WebToAgent 会在侧边栏打开时重新同步状态。
 
 ### 直接发给 Claude 时提示 No conversation found with session ID
 
-这是旧 Claude session 失效了。现在 WebToAgent 会自动清掉旧 session，并用同一条消息重试。你也可以手动点 **新会话**。
+这是旧 Claude session 失效了。WebToAgent 会自动清掉旧 session，并用同一条消息重试。你也可以手动点 **新会话**。
 
 ### Claude Code 好像卡住了
 
-先看左侧过程抽屉。如果长时间没有新工具调用，可能是 Claude Code 在等权限或登录。可以在终端里运行：
+先看左侧过程面板。如果长时间没有新工具调用，可能是 Claude Code 在等权限或登录。可以在终端里运行：
 
 ```bash
 claude login

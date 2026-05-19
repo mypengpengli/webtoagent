@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_LIST_ALL_FILES = 5000;
@@ -37,6 +37,79 @@ function addToRecent(dir) {
   recentRoots = recentRoots.filter(r => r !== dir);
   recentRoots.unshift(dir);
   if (recentRoots.length > 10) recentRoots.length = 10;
+}
+
+function setRootDirectory(dir) {
+  if (!dir) return { success: false, error: 'Path required' };
+  const newRoot = path.resolve(dir);
+  if (!fs.existsSync(newRoot) || !fs.statSync(newRoot).isDirectory()) {
+    return { success: false, error: 'Directory does not exist' };
+  }
+  rootDir = newRoot;
+  loadClaudeSessionForRoot();
+  addToRecent(newRoot);
+  saveConfig();
+  loadGitignore();
+  startWatcher();
+  return { success: true, rootDir };
+}
+
+function pickRootDirectory() {
+  if (process.platform !== 'win32') {
+    return { success: false, error: 'Folder picker is only available on Windows' };
+  }
+
+  const script = `
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = '选择 WebToAgent 工作目录'
+    $dialog.ShowNewFolderButton = $true
+    $initial = $env:WEBTOAGENT_INITIAL_DIR
+    if ($initial -and (Test-Path -LiteralPath $initial)) {
+      $dialog.SelectedPath = $initial
+    }
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    $owner.ShowInTaskbar = $false
+    $result = $dialog.ShowDialog($owner)
+    $owner.Dispose()
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.SelectedPath) {
+      Write-Output $dialog.SelectedPath
+      exit 0
+    }
+    exit 2
+  `;
+
+  const result = spawnSync('powershell.exe', [
+    '-NoProfile',
+    '-STA',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    script
+  ], {
+    encoding: 'utf8',
+    windowsHide: false,
+    env: { ...process.env, WEBTOAGENT_INITIAL_DIR: rootDir || process.cwd() }
+  });
+
+  if (result.error) {
+    return { success: false, error: result.error.message };
+  }
+  if (result.status === 2) {
+    return { success: false, cancelled: true };
+  }
+  if (result.status !== 0) {
+    const error = (result.stderr || result.stdout || '').trim();
+    return { success: false, error: error || `Folder picker exited with code ${result.status}` };
+  }
+
+  const selected = (result.stdout || '').trim().split(/\r?\n/).pop();
+  if (!selected) {
+    return { success: false, cancelled: true };
+  }
+  return setRootDirectory(selected);
 }
 
 // .gitignore support
@@ -874,18 +947,10 @@ function handleMessage(msg) {
       return { success: true, files, truncated: _listAllCount >= MAX_LIST_ALL_FILES };
 
     case 'set_root':
-      if (!msg.path) return { success: false, error: 'Path required' };
-      const newRoot = path.resolve(msg.path);
-      if (!fs.existsSync(newRoot) || !fs.statSync(newRoot).isDirectory()) {
-        return { success: false, error: 'Directory does not exist' };
-      }
-      rootDir = newRoot;
-      loadClaudeSessionForRoot();
-      addToRecent(newRoot);
-      saveConfig();
-      loadGitignore();
-      startWatcher();
-      return { success: true, rootDir };
+      return setRootDirectory(msg.path);
+
+    case 'pick_root':
+      return pickRootDirectory();
 
     case 'get_root':
       return { success: true, rootDir };

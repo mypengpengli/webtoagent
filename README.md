@@ -1,67 +1,92 @@
 # WebToAgent
 
-English | [中文](./README_CN.md)
+[中文](./README_CN.md) | English
 
-WebToAgent is a Chrome extension that connects web AI chat pages with your local project files and Claude Code. It gives ChatGPT, Qwen, Gemini, or Claude a practical way to read project context, then lets a local coding agent execute the work.
+WebToAgent is a Chrome extension that connects **web AI chat pages, local project files, GitHub/web search, and Claude Code**.
 
-Use the web model as the planner. Use Claude Code as the local worker.
+In plain language: use the web model as the project brain, and use Claude Code as the local executor.
 
-## What It Does
+Inside Qwen, ChatGPT, Gemini, or Claude, you can read local project files, insert directory structure, upload assets, and forward the web AI's answer to Claude Code. The web AI can use its own search, browsing, GitHub reading, and reasoning abilities to decide what should be done. Claude Code then performs the work in your local project.
 
-- Browse local project files inside supported AI websites.
-- Click files to insert them as Markdown code blocks.
-- Upload images and binary assets from the sidebar.
-- Use `@filename` fuzzy search inside the chat input.
-- Send web AI replies to Claude Code automatically.
-- Watch Claude Code work in a built-in process drawer, with tool calls and results shown in real time.
-- Send Claude Code's result back to the web AI manually or automatically.
-- Keep Claude Code conversation context per working directory.
+## Why This Exists
 
-## Why Use It
+Web AI products are good at:
 
-Web AI products often have strong reasoning, search, and large context windows, but they cannot directly inspect or edit your local project. Local coding agents can read files, edit code, and run commands, but you may still want a stronger web model to review, plan, or coordinate the work.
+- Strong reasoning and planning.
+- Searching the web and reading documentation.
+- Looking at GitHub repositories, issues, PRs, and discussions when the site supports browsing.
+- Reviewing tradeoffs before code is changed.
 
-WebToAgent bridges that gap:
+Local coding agents are good at:
 
-1. The web AI reviews the problem and gives instructions.
-2. WebToAgent forwards those instructions to Claude Code.
-3. Claude Code edits files and runs commands locally.
-4. WebToAgent shows the full process and returns the result to the web AI.
-5. The loop can continue until you stop it.
+- Reading your actual working tree.
+- Editing files.
+- Running commands and checking results.
+- Executing long coding tasks with a local or lower-cost model.
 
-It also works as a simple file reader even when you do not use Bridge.
+The problem is that these two sides are usually disconnected. Web AI cannot directly use your local files, and local executors do not always have the best planning or search ability. WebToAgent bridges that gap.
+
+## Typical Workflow
+
+1. Ask the web AI to analyze a feature, bug, or refactor.
+2. The web AI can use search, GitHub pages, documentation, and files inserted by WebToAgent.
+3. WebToAgent forwards the web AI's instructions to Claude Code.
+4. Claude Code edits files, runs commands, and reports results locally.
+5. WebToAgent shows the full process in a built-in process panel.
+6. The result can be sent back to the web AI for the next round of review.
+
+The loop looks like this:
+
+```text
+Web AI: search, understand, plan, review
+        ↓
+WebToAgent: pass context, show process, manage files
+        ↓
+Claude Code: read files, edit code, run commands
+```
+
+## Good Use Cases
+
+- Let a web model read GitHub README/issues/PRs first, then guide Claude Code to modify your local project.
+- Let the web model search current API docs, then have Claude Code update your code with the latest usage.
+- Let a stronger model review architecture and code, while a local or lower-cost model executes the edits.
+- Insert local files and directory structure into a web AI without copy-paste.
+- Run a web AI -> Claude Code -> web AI loop for debugging, refactoring, and implementation tasks.
+- Watch the execution timeline and interrupt with your own direct message whenever needed.
 
 ## Core Features
 
-### File Reader
+### Local File Reader
 
-- File tree sidebar for the current project.
-- One-click text file insertion.
-- Image/PDF/binary upload by simulated drag-and-drop.
-- Directory structure quick insert.
-- Insert history with undo.
-- `.gitignore` support.
-- File watcher for automatic index refresh.
-- Recent working directory switching.
+- Browse your project in a right-side file tree.
+- Click text files to insert them as Markdown code blocks.
+- Click images, PDFs, or binary assets to upload them.
+- Type `@filename` to quickly search and insert files.
+- Insert the current directory structure as a Markdown tree.
+- Respect `.gitignore` to reduce noise.
+- Watch file changes and refresh the index automatically.
+- Switch working directories from recent paths or the native folder picker.
 
 ### Bridge: Web AI to Claude Code
 
-- Start/stop Bridge from the sidebar.
-- Separate auto-send options for web AI -> Claude Code and Claude Code -> web AI.
-- Manual mode: review Claude Code output before sending it back.
-- Direct message box for talking to Claude Code at any time.
-- Built-in process drawer for detailed execution logs.
-- Per-directory Claude Code session memory.
-- "New session" button when you want to reset Claude context.
-- Automatic recovery when an old Claude session ID is no longer valid.
+- Start Bridge from the sidebar.
+- Forward web AI replies to Claude Code automatically.
+- Let Claude Code read files, edit files, and run commands locally.
+- View the detailed execution timeline in the Claude Code process panel.
+- Review Claude Code output manually before sending it back to the web AI.
+- Enable full auto mode when you want the loop to continue by itself.
+- Send a direct message to Claude Code at any time, without going through the web AI.
+- Preserve Claude Code sessions per working directory.
+- Start a new session when you want Claude Code to forget previous context.
 
 ### User Experience
 
-- `Ctrl+Shift+F` toggles the sidebar.
-- Draggable floating button.
-- Search, quick prompts, and directory-structure insertion.
-- Clean sidebar for files and controls.
-- Separate process drawer for the detailed Claude Code timeline.
+- `Ctrl+Shift+F` toggles the WebToAgent sidebar.
+- The right panel keeps files, search, switches, and quick commands.
+- The left process panel shows the detailed Claude Code timeline.
+- The process panel can stay visible while the directory panel is hidden.
+- The process panel width is resizable and remembered.
+- The process panel input uses `Enter` to send and `Shift+Enter` for a new line.
 
 ## Supported Sites
 
@@ -77,7 +102,7 @@ For file browsing only:
 
 - Chrome or a Chromium-based browser.
 
-For the full native service and Bridge:
+For the native service and Bridge:
 
 - Node.js 14+
 - Claude Code installed and logged in
@@ -120,9 +145,9 @@ Then restart Chrome and open a supported AI website.
 
 ## Basic Usage
 
-### Read Files in Web AI
+### Read Local Files in Web AI
 
-1. Open Qwen, ChatGPT, Gemini, or Claude.
+1. Open Qwen, ChatGPT, AI Studio, Gemini, or Claude.
 2. Click the WebToAgent floating button or press `Ctrl+Shift+F`.
 3. Select or switch your working directory.
 4. Click a file to insert it into the chat.
@@ -138,20 +163,26 @@ Current directory structure
 
 It inserts a Markdown-style project tree so the AI understands the repository layout before reading individual files.
 
+### Use Web Search and GitHub
+
+If your web AI supports search or browsing, give it GitHub repositories, issues, PRs, or documentation links. Let it understand the outside context first.
+
+Then use WebToAgent to insert local files, or let Bridge forward the web AI's conclusion to Claude Code. The web model handles research and judgment. Claude Code handles local execution.
+
 ## Bridge Workflow
 
-1. Open the sidebar.
+1. Open the WebToAgent sidebar.
 2. Click **Start** in the Bridge section.
-3. The Claude Code process drawer opens on the left.
-4. Ask the web AI for a coding plan or review.
+3. The **Claude Code process** panel opens on the left.
+4. Ask the web AI for a coding plan, review, or fix.
 5. If "web AI -> Claude Code" auto-send is enabled, the web AI's latest reply is forwarded to Claude Code.
-6. Watch Claude Code's tool calls, command output, and final result in the process drawer.
+6. Watch Claude Code's tool calls, command output, and final result in the process panel.
 7. Send the result back to the web AI manually, or enable "Claude Code -> web AI" auto-send.
-8. Click **Stop** when you want to pause the loop.
+8. Click **Stop** when you want to pause Bridge.
 
 Stopping Bridge does not erase Claude Code's conversation context. When you start again in the same working directory, WebToAgent tries to resume the previous Claude Code session.
 
-Use **New session** in the process drawer when you want Claude Code to forget the previous conversation and start fresh.
+Use **New session** in the process panel when you want Claude Code to forget the previous conversation and start fresh.
 
 ## Bridge Controls
 
@@ -160,7 +191,8 @@ Use **New session** in the process drawer when you want Claude Code to forget th
 | Start / Stop | Start or stop Bridge monitoring |
 | Auto send: web AI -> Claude Code | Automatically forward web AI replies to Claude Code |
 | Auto send: Claude Code -> web AI | Automatically send Claude Code results back to the web AI |
-| Show process | Show or hide the built-in Claude Code process drawer |
+| Show process / Hide process | Show or hide the Claude Code process panel |
+| Hide directory / Show directory | Hide only the right-side directory panel while keeping the process panel |
 | New session | Clear the saved Claude Code session for this working directory |
 | Direct message | Send your own instruction directly to Claude Code |
 
@@ -175,19 +207,23 @@ If the native host is unavailable, WebToAgent can still fall back to browser-bas
 
 ## Troubleshooting
 
-### Bridge says it is not started, but a CMD window is open
+### Do I have to use Bridge?
+
+No. WebToAgent is useful as a file reader by itself: click files, insert directory structure, upload images, and search project files from the web AI page.
+
+### Why does Bridge say "not started" when a CMD window is open?
 
 Reload the extension at `chrome://extensions`, refresh the AI website, then start Bridge again. Chrome MV3 service workers can restart, so WebToAgent syncs state when the sidebar opens.
 
-### Direct send fails with "No conversation found with session ID"
+### Why does direct send fail with "No conversation found with session ID"?
 
-The saved Claude Code session is stale. WebToAgent now clears that stale session and retries automatically. You can also click **New session** manually.
+The saved Claude Code session is stale. WebToAgent clears that stale session and retries automatically. You can also click **New session** manually.
 
-### Claude Code seems stuck
+### Why does Claude Code seem stuck?
 
-Open the process drawer. If no new tool calls appear for a long time, Claude Code may be waiting for permission or authentication. Run `claude login` in a terminal if needed.
+Open the process panel. If no new tool calls appear for a long time, Claude Code may be waiting for permission or authentication. Run `claude login` in a terminal if needed.
 
-### I changed code. Do I need to reinstall the native service?
+### Do I need to reinstall the native service after updating code?
 
 Usually no. Click refresh on the extension card in `chrome://extensions`, then refresh the AI website.
 
