@@ -59,37 +59,144 @@ function pickRootDirectory() {
     return { success: false, error: 'Folder picker is only available on Windows' };
   }
 
+  const helperDir = path.join(os.tmpdir(), 'webtoagent');
+  const helperDll = path.join(helperDir, 'WebToAgentFolderPicker.dll');
+  const helperSource = path.join(helperDir, 'WebToAgentFolderPicker.cs');
+
   const script = `
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    Add-Type -AssemblyName System.Windows.Forms
     $initial = $env:WEBTOAGENT_INITIAL_DIR
+    $helperDir = $env:WEBTOAGENT_HELPER_DIR
+    $helperDll = $env:WEBTOAGENT_HELPER_DLL
+    $helperSource = $env:WEBTOAGENT_HELPER_SOURCE
+
     if (-not $initial -or -not (Test-Path -LiteralPath $initial)) {
       $initial = [Environment]::GetFolderPath('MyDocuments')
     }
-    $dialog = New-Object System.Windows.Forms.OpenFileDialog
-    $dialog.Title = '选择 WebToAgent 工作目录'
-    $dialog.InitialDirectory = $initial
-    $dialog.CheckFileExists = $false
-    $dialog.CheckPathExists = $true
-    $dialog.ValidateNames = $false
-    $dialog.DereferenceLinks = $true
-    $dialog.FileName = '选择此文件夹'
-    $dialog.Filter = '文件夹|*.folder'
-    $dialog.Multiselect = $false
 
-    $result = $dialog.ShowDialog()
-    if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $dialog.FileName) {
-      $selected = $dialog.FileName
-      if (Test-Path -LiteralPath $selected -PathType Container) {
-        [Console]::Out.WriteLine((Resolve-Path -LiteralPath $selected).Path)
-        exit 0
-      }
-      $parent = Split-Path -Parent $selected
-      if ($parent -and (Test-Path -LiteralPath $parent -PathType Container)) {
-        [Console]::Out.WriteLine((Resolve-Path -LiteralPath $parent).Path)
-        exit 0
-      }
+    if (-not (Test-Path -LiteralPath $helperDir)) {
+      New-Item -ItemType Directory -Path $helperDir -Force | Out-Null
     }
+
+    if (-not (Test-Path -LiteralPath $helperDll)) {
+      @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class WebToAgentFolderPicker {
+    [DllImport("ole32.dll")]
+    private static extern int CoCreateInstance(ref Guid clsid, IntPtr pUnkOuter, uint dwClsContext, ref Guid iid, out IFileOpenDialog ppv);
+
+    [DllImport("ole32.dll")]
+    private static extern void CoTaskMemFree(IntPtr pv);
+
+    [ComImport]
+    [Guid("d57c7288-d4ad-4768-be02-9d969532d960")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileOpenDialog {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes(uint cFileTypes, IntPtr rgFilterSpec);
+        void SetFileTypeIndex(uint iFileType);
+        void GetFileTypeIndex(out uint piFileType);
+        void Advise(IntPtr pfde, out uint pdwCookie);
+        void Unadvise(uint dwCookie);
+        void SetOptions(uint fos);
+        void GetOptions(out uint pfos);
+        void SetDefaultFolder(IShellItem psi);
+        void SetFolder(IShellItem psi);
+        void GetFolder(out IShellItem ppsi);
+        void GetCurrentSelection(out IShellItem ppsi);
+        void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+        void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+        void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+        void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+        void GetResult(out IShellItem ppsi);
+        void AddPlace(IShellItem psi, int fdap);
+        void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+        void Close(int hr);
+        void SetClientGuid(ref Guid guid);
+        void ClearClientData();
+        void SetFilter(IntPtr pFilter);
+        void GetResults(out IntPtr ppenum);
+        void GetSelectedItems(out IntPtr ppsai);
+    }
+
+    [ComImport]
+    [Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItem {
+        void BindToHandler(IntPtr pbc, ref Guid bhid, ref Guid riid, out IntPtr ppv);
+        void GetParent(out IShellItem ppsi);
+        void GetDisplayName(uint sigdnName, out IntPtr ppszName);
+        void GetAttributes(uint sfgaoMask, out uint psfgaoAttribs);
+        void Compare(IShellItem psi, uint hint, out int piOrder);
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
+    private static extern void SHCreateItemFromParsingName(
+        [MarshalAs(UnmanagedType.LPWStr)] string pszPath,
+        IntPtr pbc,
+        ref Guid riid,
+        [MarshalAs(UnmanagedType.Interface)] out IShellItem ppv);
+
+    private const uint CLSCTX_INPROC_SERVER = 0x1;
+    private const uint CLSCTX_LOCAL_SERVER = 0x4;
+    private const uint FOS_NOCHANGEDIR = 0x8;
+    private const uint FOS_PICKFOLDERS = 0x20;
+    private const uint FOS_FORCEFILESYSTEM = 0x40;
+    private const uint FOS_PATHMUSTEXIST = 0x800;
+    private const uint SIGDN_FILESYSPATH = 0x80058000;
+    private const int HRESULT_CANCELLED = unchecked((int)0x800704C7);
+
+    public static string Pick(string initialPath) {
+        Guid clsid = new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7");
+        Guid iid = new Guid("d57c7288-d4ad-4768-be02-9d969532d960");
+        IFileOpenDialog dialog;
+        int hr = CoCreateInstance(ref clsid, IntPtr.Zero, CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER, ref iid, out dialog);
+        if (hr != 0) Marshal.ThrowExceptionForHR(hr);
+
+        uint options;
+        dialog.GetOptions(out options);
+        dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
+        dialog.SetTitle("选择 WebToAgent 工作目录");
+        dialog.SetOkButtonLabel("选择文件夹");
+
+        if (!String.IsNullOrEmpty(initialPath)) {
+            try {
+                Guid shellItemGuid = new Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe");
+                IShellItem folder;
+                SHCreateItemFromParsingName(initialPath, IntPtr.Zero, ref shellItemGuid, out folder);
+                dialog.SetFolder(folder);
+            } catch {}
+        }
+
+        hr = dialog.Show(IntPtr.Zero);
+        if (hr == HRESULT_CANCELLED) return null;
+        if (hr != 0) Marshal.ThrowExceptionForHR(hr);
+
+        IShellItem result;
+        dialog.GetResult(out result);
+        IntPtr pathPtr;
+        result.GetDisplayName(SIGDN_FILESYSPATH, out pathPtr);
+        try {
+            return Marshal.PtrToStringUni(pathPtr);
+        } finally {
+            CoTaskMemFree(pathPtr);
+        }
+    }
+}
+'@ | Set-Content -LiteralPath $helperSource -Encoding UTF8
+      Add-Type -Path $helperSource -OutputAssembly $helperDll -OutputType Library
+    }
+
+    Add-Type -Path $helperDll
+    $selected = [WebToAgentFolderPicker]::Pick($initial)
+    if ($selected) {
+      [Console]::Out.WriteLine($selected)
+      exit 0
+    }
+
     exit 2
   `;
 
@@ -104,7 +211,13 @@ function pickRootDirectory() {
     encoding: 'utf8',
     windowsHide: false,
     timeout: 5 * 60 * 1000,
-    env: { ...process.env, WEBTOAGENT_INITIAL_DIR: rootDir || process.cwd() }
+    env: {
+      ...process.env,
+      WEBTOAGENT_INITIAL_DIR: rootDir || process.cwd(),
+      WEBTOAGENT_HELPER_DIR: helperDir,
+      WEBTOAGENT_HELPER_DLL: helperDll,
+      WEBTOAGENT_HELPER_SOURCE: helperSource
+    }
   });
 
   if (result.error) {
