@@ -55,10 +55,16 @@ function setRootDirectory(dir) {
 }
 
 function pickRootDirectory() {
-  if (process.platform !== 'win32') {
-    return { success: false, error: 'Folder picker is only available on Windows' };
+  if (process.platform === 'win32') {
+    return pickRootDirectoryWindows();
   }
+  if (process.platform === 'darwin') {
+    return pickRootDirectoryMac();
+  }
+  return { success: false, error: 'Folder picker is only available on Windows and macOS' };
+}
 
+function pickRootDirectoryWindows() {
   const helperDir = path.join(os.tmpdir(), 'webtoagent');
   const helperDll = path.join(helperDir, 'WebToAgentFolderPicker.dll');
   const helperSource = path.join(helperDir, 'WebToAgentFolderPicker.cs');
@@ -235,6 +241,46 @@ public static class WebToAgentFolderPicker {
   }
 
   const selected = (result.stdout || '').trim().split(/\r?\n/).pop();
+  if (!selected) {
+    return { success: false, cancelled: true };
+  }
+  return setRootDirectory(selected);
+}
+
+function escapeAppleScriptString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function pickRootDirectoryMac() {
+  const initial = rootDir && fs.existsSync(rootDir) ? rootDir : os.homedir();
+  const script = `
+set initialPath to POSIX file "${escapeAppleScriptString(initial)}"
+try
+  set chosenFolder to choose folder with prompt "选择 WebToAgent 工作目录" default location (initialPath as alias)
+  POSIX path of chosenFolder
+on error number -128
+  return ""
+end try
+`;
+
+  const result = spawnSync('osascript', ['-e', script], {
+    encoding: 'utf8',
+    timeout: 5 * 60 * 1000
+  });
+
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      return { success: false, error: 'Folder picker timed out' };
+    }
+    return { success: false, error: result.error.message };
+  }
+
+  if (result.status !== 0) {
+    const error = (result.stderr || result.stdout || '').trim();
+    return { success: false, error: error || `Folder picker exited with code ${result.status}` };
+  }
+
+  const selected = (result.stdout || '').trim();
   if (!selected) {
     return { success: false, cancelled: true };
   }

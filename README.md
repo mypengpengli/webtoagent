@@ -106,7 +106,7 @@ For the native service and Bridge:
 
 - Node.js 14+
 - Claude Code installed and logged in
-- Windows install script is included
+- Windows and macOS install scripts are included
 
 Install Claude Code:
 
@@ -127,10 +127,23 @@ claude login
 
 ### 2. Install the Native Host
 
+Windows:
+
 Double-click:
 
 ```text
 安装本地服务.bat
+```
+
+Paste the extension ID when prompted.
+
+macOS:
+
+Open a terminal in the project folder and run:
+
+```bash
+chmod +x install-native-host.sh uninstall-native-host.sh native-host/host.sh
+./install-native-host.sh
 ```
 
 Paste the extension ID when prompted.
@@ -141,7 +154,7 @@ The installer writes the Native Messaging manifest and registers:
 com.webtoagent.host
 ```
 
-Then restart Chrome and open a supported AI website.
+Then restart Chrome and open a supported AI website. On macOS, the folder button opens a Finder folder picker and uses POSIX paths such as `/Users/you/project`.
 
 ## Basic Usage
 
@@ -232,7 +245,8 @@ Reinstall the native service only if the extension ID, native host name, or inst
 ## Uninstall
 
 - Remove the extension in `chrome://extensions`.
-- Double-click `卸载本地服务.bat` to unregister the native host.
+- Windows: double-click `卸载本地服务.bat` to unregister the native host.
+- macOS: run `./uninstall-native-host.sh` to unregister the native host.
 
 ## License
 

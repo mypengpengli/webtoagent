@@ -103,7 +103,7 @@ Claude Code：读取项目、修改代码、运行命令
 
 - Node.js 14+
 - 已安装并登录 Claude Code
-- 当前仓库提供 Windows 安装脚本
+- 当前仓库提供 Windows 和 macOS 安装脚本
 
 安装 Claude Code：
 
@@ -124,10 +124,23 @@ claude login
 
 ### 2. 安装本地服务
 
+Windows：
+
 双击：
 
 ```text
 安装本地服务.bat
+```
+
+按提示粘贴扩展 ID。
+
+macOS：
+
+在项目目录打开终端，执行：
+
+```bash
+chmod +x install-native-host.sh uninstall-native-host.sh native-host/host.sh
+./install-native-host.sh
 ```
 
 按提示粘贴扩展 ID。
@@ -138,7 +151,7 @@ claude login
 com.webtoagent.host
 ```
 
-安装完成后重启 Chrome，然后打开支持的 AI 网站。
+安装完成后重启 Chrome，然后打开支持的 AI 网站。macOS 上点击文件夹按钮时会弹出 Finder 选择文件夹窗口，路径格式是 `/Users/xxx/project`。
 
 ## 基础用法
 
@@ -233,7 +246,8 @@ claude login
 ## 卸载
 
 - 在 `chrome://extensions` 删除扩展。
-- 双击 `卸载本地服务.bat` 注销本地服务。
+- Windows：双击 `卸载本地服务.bat` 注销本地服务。
+- macOS：执行 `./uninstall-native-host.sh` 注销本地服务。
 
 ## License
 
