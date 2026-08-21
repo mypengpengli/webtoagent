@@ -1,6 +1,9 @@
 (function() {
   'use strict';
 
+  const t = WebToAgentI18n.t;
+  const localizeError = WebToAgentI18n.localizeError;
+
   const ADAPTERS = [
     new QwenAdapter(),
     new ChatGPTAdapter(),
@@ -345,7 +348,7 @@
       cooldownUntil = Date.now() + 5000;
 
       if (bridgeRound > bridgeMaxRounds) {
-        if (fileTree) fileTree.showToast(`已达 ${bridgeMaxRounds} 轮，仍在继续...`);
+        if (fileTree) fileTree.showToast(t('roundLimitReached', { count: bridgeMaxRounds }));
       }
 
       // Auto-forward Qwen's reply to Claude Code
@@ -361,7 +364,7 @@
 
     if (fileTree) {
       fileTree.updateBridge(bridgeBusy ? 'sending' : 'waiting', bridgeRound);
-      if (showToast) fileTree.showToast('Bridge 已启动，等待新回复...');
+      if (showToast) fileTree.showToast(t('bridgeStarted'));
     }
 
     return true;
@@ -407,13 +410,13 @@
       });
       if (!resp.success) {
         if (await syncBridgeStatus()) return true;
-        if (fileTree) fileTree.showToast(resp.error || '启动失败', 'error');
+        if (fileTree) fileTree.showToast(resp.error ? localizeError(resp.error) : t('startFailed'), 'error');
         return false;
       }
     } catch (err) {
       console.error('[WebToAgent] Bridge start failed:', err);
       if (await syncBridgeStatus()) return true;
-      if (fileTree) fileTree.showToast(`无法连接本地服务: ${err.message || err}`, 'error', 5000);
+      if (fileTree) fileTree.showToast(t('cannotConnectNative', { error: localizeError(err.message || err) }), 'error', 5000);
       return false;
     }
 
@@ -438,7 +441,7 @@
     chrome.runtime.sendMessage({ type: 'BRIDGE_STOP' }).catch(() => {});
     if (fileTree) {
       fileTree.updateBridge('stopped', 0);
-      fileTree.showToast('Bridge 已停止');
+      fileTree.showToast(t('bridgeStopped'));
     }
   }
 
@@ -446,7 +449,7 @@
     try {
       const response = await chrome.runtime.sendMessage({ type: 'BRIDGE_NEW_SESSION' });
       if (!response.success) {
-        if (fileTree) fileTree.showToast(`新会话失败: ${response.error}`, 'error');
+        if (fileTree) fileTree.showToast(t('newSessionFailed', { error: localizeError(response.error) }), 'error');
         return false;
       }
       bridgeRound = 0;
@@ -454,11 +457,11 @@
       if (fileTree) {
         fileTree.clearBridgeLog();
         fileTree.updateBridge(bridgeActive ? 'waiting' : 'stopped', 0);
-        fileTree.showToast('已新建 Claude 会话');
+        fileTree.showToast(t('sessionCreated'));
       }
       return true;
     } catch (err) {
-      if (fileTree) fileTree.showToast(`新会话失败: ${err.message}`, 'error');
+      if (fileTree) fileTree.showToast(t('newSessionFailed', { error: localizeError(err.message) }), 'error');
       return false;
     }
   }
@@ -467,8 +470,8 @@
     bridgeBusy = true;
     if (fileTree) {
       fileTree.updateBridge('sending', bridgeRound);
-      const label = source === 'direct' ? '用户直发' : '网页 AI';
-      fileTree.appendBridgeLog(`\n▶ 第 ${bridgeRound || 1} 轮\n${label} -> Claude Code\n${text}`, 'prompt');
+      const label = source === 'direct' ? t('directUser') : t('webAi');
+      fileTree.appendBridgeLog(t('roundLog', { round: bridgeRound || 1, source: label, text }), 'prompt');
     }
 
     try {
@@ -481,7 +484,7 @@
       if (!response.success) {
         bridgeBusy = false;
         if (fileTree) {
-          fileTree.showToast(`发送失败: ${response.error}`, 'error');
+          fileTree.showToast(t('sendFailed', { error: localizeError(response.error) }), 'error');
           fileTree.updateBridge('waiting', bridgeRound);
         }
         return false;
@@ -490,7 +493,7 @@
     } catch (err) {
       bridgeBusy = false;
       if (fileTree) {
-        fileTree.showToast(`Bridge 连接错误: ${err.message}`, 'error');
+        fileTree.showToast(t('bridgeConnectionError', { error: localizeError(err.message) }), 'error');
         fileTree.updateBridge('waiting', bridgeRound);
       }
       return false;
@@ -509,7 +512,7 @@
     }
 
     if (bridgeBusy) {
-      if (fileTree) fileTree.showToast('Claude Code 正在执行上一轮，请稍候', 'error');
+      if (fileTree) fileTree.showToast(t('claudeBusy'), 'error');
       return false;
     }
 
@@ -533,7 +536,7 @@
       callback();
     } else if (attempts > 25) {
       const submitted = currentAdapter.clickSend();
-      if (!submitted && fileTree) fileTree.showToast('发送按钮未就绪，请手动发送', 'error');
+      if (!submitted && fileTree) fileTree.showToast(t('sendButtonNotReady'), 'error');
     } else {
       setTimeout(() => waitForSendEnabled(callback, attempts + 1), 200);
     }
@@ -560,7 +563,7 @@
       const resultText = msg.text || '';
       const source = msg.source || 'web_ai';
       if (fileTree) {
-        fileTree.appendBridgeLog('Claude Code -> 网页\n' + resultText.substring(0, 4000), 'assistant');
+        fileTree.appendBridgeLog(t('claudeToWeb') + '\n' + resultText.substring(0, 4000), 'assistant');
         fileTree.showBridgeResult(resultText, () => {
           currentAdapter.insertText(resultText, true);
           waitForSendEnabled(() => {
@@ -570,8 +573,8 @@
       }
     } else {
       if (fileTree) {
-        fileTree.appendBridgeLog('Claude Code 错误\n' + (msg.error || ''), 'error');
-        fileTree.showToast(`Claude Code error: ${msg.error}`, 'error');
+        fileTree.appendBridgeLog(t('claudeError') + '\n' + localizeError(msg.error || ''), 'error');
+        fileTree.showToast(`${t('claudeError')}: ${localizeError(msg.error)}`, 'error');
         fileTree.updateBridge('waiting', bridgeRound);
       }
       // Don't stop bridge on error - user controls stop manually
@@ -588,7 +591,7 @@
       fileAccess.listAllFiles(8);
       updateStatusDot();
       if (fileTree && fileTree.visible) {
-        fileTree.showToast('文件已变更，索引已更新');
+        fileTree.showToast(t('filesChanged'));
       }
     }
 
@@ -604,11 +607,11 @@
       if (event.type === 'assistant' && event.message && event.message.content) {
         for (const block of event.message.content) {
           if (block.type === 'text' && block.text) {
-            fileTree.appendBridgeLog('Claude 思考\n' + block.text.substring(0, 3000), 'assistant');
+            fileTree.appendBridgeLog(t('claudeThinking') + '\n' + block.text.substring(0, 3000), 'assistant');
           }
           if (block.type === 'tool_use') {
             const input = block.input ? `\n${JSON.stringify(block.input, null, 2).substring(0, 1200)}` : '';
-            fileTree.appendBridgeLog(`工具调用: ${block._summary || block.name}${input}`, 'tool');
+            fileTree.appendBridgeLog(t('toolCall', { tool: block._summary || block.name }) + input, 'tool');
           }
         }
       }
@@ -618,13 +621,13 @@
         for (const block of event.message.content) {
           if (block.type === 'tool_result' && block.content) {
             const text = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
-            fileTree.appendBridgeLog('工具返回\n' + text.substring(0, 1600), block.is_error ? 'error' : 'tool');
+            fileTree.appendBridgeLog(t('toolResult') + '\n' + text.substring(0, 1600), block.is_error ? 'error' : 'tool');
           }
         }
       }
 
       if (event.type === 'result' && event.result) {
-        fileTree.appendBridgeLog('Claude 最终结果\n' + event.result.substring(0, 4000), 'assistant');
+        fileTree.appendBridgeLog(t('claudeFinalResult') + '\n' + event.result.substring(0, 4000), 'assistant');
       }
     }
 

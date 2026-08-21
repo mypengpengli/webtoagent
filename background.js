@@ -203,7 +203,7 @@ async function handleMessage(message, sender) {
 
     case 'FS_PICK_ROOT': {
       if (await ensureConnected()) {
-        return await sendNativeMessage({ action: 'pick_root' }, 5 * 60 * 1000);
+        return await sendNativeMessage({ action: 'pick_root', locale: message.locale }, 5 * 60 * 1000);
       }
       return { success: false, error: 'Native host not connected', fallback: true };
     }

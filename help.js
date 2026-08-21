@@ -1,0 +1,1 @@
+WebToAgentI18n.localizeDocument();

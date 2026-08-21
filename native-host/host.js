@@ -54,20 +54,25 @@ function setRootDirectory(dir) {
   return { success: true, rootDir };
 }
 
-function pickRootDirectory() {
+function isChineseLocale(locale) {
+  return /^zh(?:-|_|$)/i.test(locale || '');
+}
+
+function pickRootDirectory(locale) {
   if (process.platform === 'win32') {
-    return pickRootDirectoryWindows();
+    return pickRootDirectoryWindows(locale);
   }
   if (process.platform === 'darwin') {
-    return pickRootDirectoryMac();
+    return pickRootDirectoryMac(locale);
   }
   return { success: false, error: 'Folder picker is only available on Windows and macOS' };
 }
 
-function pickRootDirectoryWindows() {
+function pickRootDirectoryWindows(locale) {
+  const isChinese = isChineseLocale(locale);
   const helperDir = path.join(os.tmpdir(), 'webtoagent');
-  const helperDll = path.join(helperDir, 'WebToAgentFolderPicker.dll');
-  const helperSource = path.join(helperDir, 'WebToAgentFolderPicker.cs');
+  const helperDll = path.join(helperDir, 'WebToAgentFolderPickerV2.dll');
+  const helperSource = path.join(helperDir, 'WebToAgentFolderPickerV2.cs');
 
   const script = `
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -75,6 +80,8 @@ function pickRootDirectoryWindows() {
     $helperDir = $env:WEBTOAGENT_HELPER_DIR
     $helperDll = $env:WEBTOAGENT_HELPER_DLL
     $helperSource = $env:WEBTOAGENT_HELPER_SOURCE
+    $pickerTitle = $env:WEBTOAGENT_PICKER_TITLE
+    $pickerButton = $env:WEBTOAGENT_PICKER_BUTTON
 
     if (-not $initial -or -not (Test-Path -LiteralPath $initial)) {
       $initial = [Environment]::GetFolderPath('MyDocuments')
@@ -155,7 +162,7 @@ public static class WebToAgentFolderPicker {
     private const uint SIGDN_FILESYSPATH = 0x80058000;
     private const int HRESULT_CANCELLED = unchecked((int)0x800704C7);
 
-    public static string Pick(string initialPath) {
+    public static string Pick(string initialPath, string title, string buttonLabel) {
         Guid clsid = new Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7");
         Guid iid = new Guid("d57c7288-d4ad-4768-be02-9d969532d960");
         IFileOpenDialog dialog;
@@ -165,8 +172,8 @@ public static class WebToAgentFolderPicker {
         uint options;
         dialog.GetOptions(out options);
         dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
-        dialog.SetTitle("选择 WebToAgent 工作目录");
-        dialog.SetOkButtonLabel("选择文件夹");
+        dialog.SetTitle(title);
+        dialog.SetOkButtonLabel(buttonLabel);
 
         if (!String.IsNullOrEmpty(initialPath)) {
             try {
@@ -197,7 +204,7 @@ public static class WebToAgentFolderPicker {
     }
 
     Add-Type -Path $helperDll
-    $selected = [WebToAgentFolderPicker]::Pick($initial)
+    $selected = [WebToAgentFolderPicker]::Pick($initial, $pickerTitle, $pickerButton)
     if ($selected) {
       [Console]::Out.WriteLine($selected)
       exit 0
@@ -222,7 +229,9 @@ public static class WebToAgentFolderPicker {
       WEBTOAGENT_INITIAL_DIR: rootDir || process.cwd(),
       WEBTOAGENT_HELPER_DIR: helperDir,
       WEBTOAGENT_HELPER_DLL: helperDll,
-      WEBTOAGENT_HELPER_SOURCE: helperSource
+      WEBTOAGENT_HELPER_SOURCE: helperSource,
+      WEBTOAGENT_PICKER_TITLE: isChinese ? '选择 WebToAgent 工作目录' : 'Choose a WebToAgent working directory',
+      WEBTOAGENT_PICKER_BUTTON: isChinese ? '选择文件夹' : 'Select folder'
     }
   });
 
@@ -251,12 +260,15 @@ function escapeAppleScriptString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function pickRootDirectoryMac() {
+function pickRootDirectoryMac(locale) {
   const initial = rootDir && fs.existsSync(rootDir) ? rootDir : os.homedir();
+  const prompt = isChineseLocale(locale)
+    ? '选择 WebToAgent 工作目录'
+    : 'Choose a WebToAgent working directory';
   const script = `
 set initialPath to POSIX file "${escapeAppleScriptString(initial)}"
 try
-  set chosenFolder to choose folder with prompt "选择 WebToAgent 工作目录" default location (initialPath as alias)
+  set chosenFolder to choose folder with prompt "${escapeAppleScriptString(prompt)}" default location (initialPath as alias)
   POSIX path of chosenFolder
 on error number -128
   return ""
@@ -1125,7 +1137,7 @@ function handleMessage(msg) {
       return setRootDirectory(msg.path);
 
     case 'pick_root':
-      return pickRootDirectory();
+      return pickRootDirectory(msg.locale);
 
     case 'get_root':
       return { success: true, rootDir };

@@ -1,0 +1,8 @@
+{
+  "extensionDescription": {
+    "message": "Let web-based AI read local files and direct a local coding agent"
+  },
+  "toggleSidebarCommand": {
+    "message": "Toggle the file panel"
+  }
+}
