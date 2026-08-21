@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
+  <title>WebToAgent</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
@@ -10,18 +11,18 @@
 
     <div class="section">
       <div class="status-row">
-        <span class="label">连接状态</span>
-        <span class="status-badge" id="status-badge">检测中...</span>
+        <span class="label" data-i18n="connectionStatus">Connection status</span>
+        <span class="status-badge" id="status-badge" data-i18n="checking">Checking...</span>
       </div>
       <p class="hint" id="status-hint"></p>
     </div>
 
     <div class="section">
-      <label class="label">支持的网站</label>
+      <label class="label" data-i18n="supportedSites">Supported sites</label>
       <div class="site-list">
         <label class="site-item">
           <input type="checkbox" data-site="chat.qwen.ai" checked />
-          <span>通义千问 (chat.qwen.ai)</span>
+          <span data-i18n="qwenSite">Qwen (chat.qwen.ai)</span>
         </label>
         <label class="site-item">
           <input type="checkbox" data-site="chatgpt.com" checked />
@@ -43,15 +44,16 @@
     </div>
 
     <div class="section">
-      <p class="hint">打开支持的网站后，点击右下角 📁 或按 <kbd>Ctrl+Shift+F</kbd> 打开文件面板</p>
+      <p class="hint" data-i18n-html="openPanelHint">Open a supported site, then click 📁 in the bottom-right corner or press <kbd>Ctrl+Shift+F</kbd> to open the file panel.</p>
     </div>
 
     <div class="section footer">
       <span class="version">v0.1.0</span>
-      <a href="#" id="help-link">使用说明</a>
+      <a href="#" id="help-link" data-i18n="help">Help</a>
     </div>
   </div>
 
+  <script src="lib/i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

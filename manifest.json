@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "WebToAgent",
   "version": "1.0.0",
-  "description": "让网页端 AI 读取本地文件并指挥本地智能体工作",
+  "default_locale": "en",
+  "description": "__MSG_extensionDescription__",
   "permissions": [
     "nativeMessaging",
     "storage",
@@ -28,6 +29,7 @@
         "https://claude.ai/*"
       ],
       "js": [
+        "lib/i18n.js",
         "lib/language-map.js",
         "lib/fuzzy-match.js",
         "lib/file-access.js",
@@ -61,7 +63,7 @@
   "commands": {
     "toggle-sidebar": {
       "suggested_key": { "default": "Ctrl+Shift+F" },
-      "description": "Toggle file panel"
+      "description": "__MSG_toggleSidebarCommand__"
     }
   }
 }

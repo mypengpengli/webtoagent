@@ -1,0 +1,8 @@
+{
+  "extensionDescription": {
+    "message": "让网页端 AI 读取本地文件并指挥本地智能体工作"
+  },
+  "toggleSidebarCommand": {
+    "message": "打开或关闭文件面板"
+  }
+}
